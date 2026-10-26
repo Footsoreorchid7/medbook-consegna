@@ -1,0 +1,5602 @@
+# MedBook — contratto ricavato dal codice.
+openapi: 3.1.0
+info:
+  title: MedBook — API implementate
+  version: 1.0.0
+  description: 'Specifica ricavata dal backend Java al commit 1aecbf3bf9a221267b0c0ba41251d6c984a7941d (Git inizialmente
+    pulito), 26 ottobre 2026. Analisi statica di Main, controller, DTO, policy, servizi e test; nessuna esecuzione
+    dei test applicativi attestata.
+
+
+    Autenticazione con cookie HttpOnly SameSite=Lax, Path=/: medbook_local_session in local-http oppure __Host-medbook_session
+    con Secure in modalità https. Le alternative OpenAPI rappresentano due configurazioni, non due cookie da usare
+    insieme. Sessioni in memoria: inattività 30 minuti, durata assoluta 8 ore; riavvio backend = nuova autenticazione.
+    Nessun Bearer/JWT.
+
+
+    Login e GET /api/auth/me restituiscono X-CSRF-Token negli header. Tutte le modifiche protette richiedono Origin
+    esattamente uguale a MEDBOOK_AUTH_ORIGIN e X-CSRF-Token della sessione. Login anonimo e registrazione richiedono
+    Origin; login con sessione già valida richiede anche CSRF. Nei GET protetti Origin, se presente, deve coincidere.
+    Nessun CORS/OPTIONS applicativo; Swagger ospitato su altra origine è adatto alla consultazione, non al Try it
+    out autenticato. I parametri id dell’attore non autenticano: vengono confrontati con la sessione, salvo il medico
+    filtrato dal desk.
+
+
+    Le autorizzazioni indicate per operazione derivano dalla policy; AMMINISTRATORE non eredita DESK. Proprietà
+    delle risorse e vincoli di dominio sono ulteriormente verificati nel backend. JSON di errore: {"error":"..."}.
+    Non si promette che ogni messaggio sia stabile. Per percorsi sconosciuti 404, metodi non previsti 405 con Allow;
+    HEAD/OPTIONS non sono operazioni supportate. I JSON sconosciuti o non validi possono produrre 400; il dettaglio
+    delle query e dei controlli varia per controller.
+
+
+    Date/ore LocalDateTime senza offset; importi numerici in euro. Pagamento online esclusivamente simulato; approvazione
+    rimborso amministrativa senza restituzione del denaro. Upload referto come corpo application/pdf, non multipart.
+    Nessun endpoint di esecuzione rimborso, generazione referto, configurazione generale o health check è registrato
+    in Main.'
+  x-source-commit: 1aecbf3bf9a221267b0c0ba41251d6c984a7941d
+servers:
+- url: /
+  description: Stessa origine del backend/proxy MedBook; i percorsi includono /api.
+tags:
+- name: Autenticazione e account
+- name: Prestazioni e disponibilità
+- name: Prenotazioni
+- name: Pagamenti e rimborsi
+- name: Referti
+- name: Medico
+- name: Segreteria
+- name: Amministratore
+security:
+- SessioneLocale: []
+- SessioneHttps: []
+paths:
+  /api/auth/register:
+    post:
+      tags:
+      - Autenticazione e account
+      summary: Registrare un paziente
+      operationId: post_api_auth_register
+      description: 'Autorizzazione: PUBBLICO. Non crea una sessione: eseguire login. Corpo massimo 8192 byte. Password
+        paziente 8–1024 unità UTF-16; nessuna credenziale reale negli esempi. Query non consentita.'
+      x-permission: PUBBLICO
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '403':
+          $ref: '#/components/responses/E403'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '429':
+          $ref: '#/components/responses/E429'
+        '500':
+          $ref: '#/components/responses/E500'
+        '201':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrazionePazienteRequest'
+      x-source: src/main/java/it/medbook/controller/RegistrazioneController.java
+  /api/auth/login:
+    post:
+      tags:
+      - Autenticazione e account
+      summary: Autenticarsi
+      operationId: post_api_auth_login
+      description: 'Autorizzazione: PUBBLICO. Origin obbligatoria. Se il cookie identifica una sessione valida serve
+        anche X-CSRF-Token. Corpo massimo 8192 byte; Content-Type non JSON produce 400. Nessuna query.'
+      x-permission: PUBBLICO
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          type: string
+        description: Obbligatorio soltanto con sessione precedente valida.
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '405':
+          $ref: '#/components/responses/E405'
+        '429':
+          $ref: '#/components/responses/E429'
+        '500':
+          $ref: '#/components/responses/E500'
+        '503':
+          description: Capacità sessioni esaurita.
+          headers:
+            Retry-After:
+              schema:
+                type: string
+              example: '60'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UtenteAutenticatoResponse'
+          headers:
+            X-CSRF-Token:
+              schema:
+                type: string
+              description: Token da inviare nelle modifiche.
+            Set-Cookie:
+              schema:
+                type: string
+              description: Cookie HttpOnly della modalità configurata; valore segreto, non esposto nel JSON.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      x-source: src/main/java/it/medbook/controller/AutenticazioneController.java
+  /api/auth/me:
+    get:
+      tags:
+      - Autenticazione e account
+      summary: Leggere identità e token CSRF
+      operationId: get_api_auth_me
+      description: 'Autorizzazione: AUTENTICATO. Nessuna query. Origin, se presente, deve coincidere.'
+      x-permission: AUTENTICATO
+      parameters: []
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '405':
+          $ref: '#/components/responses/E405'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UtenteAutenticatoResponse'
+          headers:
+            X-CSRF-Token:
+              schema:
+                type: string
+              description: Token da inviare nelle modifiche.
+      x-source: src/main/java/it/medbook/controller/AutenticazioneController.java
+  /api/auth/logout:
+    post:
+      tags:
+      - Autenticazione e account
+      summary: Terminare la sessione
+      operationId: post_api_auth_logout
+      description: 'Autorizzazione: AUTENTICATO. Corpo vuoto, non {}. Nessuna query. Revoca il cookie e invia Set-Cookie
+        scaduto.'
+      x-permission: AUTENTICATO
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '405':
+          $ref: '#/components/responses/E405'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+      x-source: src/main/java/it/medbook/controller/AutenticazioneController.java
+  /api/auth/password:
+    put:
+      tags:
+      - Autenticazione e account
+      summary: Cambiare la propria password
+      operationId: put_api_auth_password
+      description: 'Autorizzazione: AUTENTICATO. Corpo massimo 8192 byte. Dopo commit invalida le sessioni precedenti;
+        200 con nuovoAccessoRichiesto=true richiede nuovo login, altrimenti pubblica nuova sessione e token. Commit
+        incerto: 500 con cookie scaduto. Nessuna query.'
+      x-permission: AUTENTICATO
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '415':
+          $ref: '#/components/responses/E415'
+        '429':
+          $ref: '#/components/responses/E429'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CambioPasswordResponse'
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: Nuova sessione oppure cookie scaduto.
+            X-CSRF-Token:
+              schema:
+                type: string
+              description: Presente solo se nuovoAccessoRichiesto=false.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CambioPasswordRequest'
+      x-source: src/main/java/it/medbook/controller/AutenticazioneController.java
+  /api/prestazioni:
+    get:
+      tags:
+      - Prestazioni e disponibilità
+      summary: Elencare prestazioni
+      operationId: get_api_prestazioni
+      description: 'Autorizzazione: PUBBLICO. Elenco JSON senza paginazione. La query viene ignorata dal controller.'
+      x-permission: PUBBLICO
+      parameters: []
+      responses:
+        '405':
+          $ref: '#/components/responses/E405'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PrestazioneResponse'
+      security: []
+      x-source: src/main/java/it/medbook/controller/PrestazioneController.java
+    post:
+      tags:
+      - Amministratore
+      summary: Creare prestazioni
+      operationId: post_api_prestazioni
+      description: 'Autorizzazione: AMMINISTRATORE. Corpo JSON massimo 8192 byte. Durata 1–60 minuti; una prestazione
+        breve occupa comunque uno slot di 60 minuti. Query ignorata.'
+      x-permission: AMMINISTRATORE
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '415':
+          $ref: '#/components/responses/E415'
+        '500':
+          $ref: '#/components/responses/E500'
+        '201':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrestazioneResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrestazioneRequest'
+      x-source: src/main/java/it/medbook/controller/PrestazioneController.java
+  /api/prestazioni/{id}:
+    put:
+      tags:
+      - Amministratore
+      summary: Aggiornare prestazioni
+      operationId: put_api_prestazioni_id
+      description: 'Autorizzazione: AMMINISTRATORE. Corpo JSON massimo 8192 byte. Durata 1–60 minuti; una prestazione
+        breve occupa comunque uno slot di 60 minuti. Query ignorata.'
+      x-permission: AMMINISTRATORE
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '415':
+          $ref: '#/components/responses/E415'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrestazioneResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrestazioneRequest'
+      x-source: src/main/java/it/medbook/controller/PrestazioneController.java
+  /api/stanze:
+    get:
+      tags:
+      - Amministratore
+      summary: Elencare stanze
+      operationId: get_api_stanze
+      description: 'Autorizzazione: AMMINISTRATORE_O_DESK. Elenco JSON senza paginazione. Query non consentita.'
+      x-permission: AMMINISTRATORE_O_DESK
+      parameters: []
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '405':
+          $ref: '#/components/responses/E405'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StanzaResponse'
+      x-source: src/main/java/it/medbook/controller/StanzaController.java
+    post:
+      tags:
+      - Amministratore
+      summary: Creare stanze
+      operationId: post_api_stanze
+      description: 'Autorizzazione: AMMINISTRATORE. Corpo JSON massimo 8192 byte. Nome univoco; descrizione facoltativa.
+        Nessuna query.'
+      x-permission: AMMINISTRATORE
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '415':
+          $ref: '#/components/responses/E415'
+        '500':
+          $ref: '#/components/responses/E500'
+        '201':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StanzaResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StanzaRequest'
+      x-source: src/main/java/it/medbook/controller/StanzaController.java
+  /api/stanze/{id}:
+    put:
+      tags:
+      - Amministratore
+      summary: Aggiornare stanze
+      operationId: put_api_stanze_id
+      description: 'Autorizzazione: AMMINISTRATORE. Corpo JSON massimo 8192 byte. Nome univoco; descrizione facoltativa.
+        Nessuna query.'
+      x-permission: AMMINISTRATORE
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '415':
+          $ref: '#/components/responses/E415'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StanzaResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StanzaRequest'
+      x-source: src/main/java/it/medbook/controller/StanzaController.java
+  /api/disponibilita/prenotabili:
+    get:
+      tags:
+      - Prestazioni e disponibilità
+      summary: Cercare slot prenotabili
+      operationId: get_api_disponibilita_prenotabili
+      description: 'Autorizzazione: PUBBLICO. Slot futuri configurati con medico operativo, non occupati da RICHIESTA,
+        CONFERMATA, EFFETTUATA, PAZIENTE_ASSENTE, NON_EROGATA. Filtri tutti facoltativi.'
+      x-permission: PUBBLICO
+      parameters:
+      - name: medicoId
+        in: query
+        required: false
+        description: Filtro facoltativo.
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+      - name: prestazioneId
+        in: query
+        required: false
+        description: Filtro facoltativo.
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+      - name: data
+        in: query
+        required: false
+        description: Filtro facoltativo.
+        schema:
+          type: string
+          format: date
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '405':
+          $ref: '#/components/responses/E405'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DisponibilitaPrenotabileResponse'
+      security: []
+      x-source: src/main/java/it/medbook/controller/DisponibilitaController.java
+  /api/disponibilita:
+    get:
+      tags:
+      - Medico
+      summary: Elencare disponibilità di un medico
+      operationId: get_api_disponibilita
+      description: 'Autorizzazione: MEDICO_O_DESK. '
+      x-permission: MEDICO_O_DESK
+      parameters:
+      - name: medicoId
+        in: query
+        required: true
+        description: 'Medico: uguale a idUtente della sessione. Desk: medico consultato.'
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '405':
+          $ref: '#/components/responses/E405'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DisponibilitaResponse'
+      x-source: src/main/java/it/medbook/controller/DisponibilitaController.java
+    post:
+      tags:
+      - Medico
+      summary: Generare slot da una fascia
+      operationId: post_api_disponibilita
+      description: 'Autorizzazione: MEDICO. idMedico deve coincidere con la sessione. Fascia futura, multiplo esatto
+        di 60 minuti, massimo 1000 slot; creazione atomica. Nessuna scelta di prestazione o stanza. Le sovrapposizioni
+        della creazione sono rifiutate come input non valido (400). La query non viene esplicitamente rifiutata
+        dal controller (non contiene parametri funzionali documentati).'
+      x-permission: MEDICO
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '405':
+          $ref: '#/components/responses/E405'
+        '500':
+          $ref: '#/components/responses/E500'
+        '201':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DisponibilitaResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreaDisponibilitaRequest'
+      x-source: src/main/java/it/medbook/controller/DisponibilitaController.java
+  /api/disponibilita/{id}/configurazione:
+    put:
+      tags:
+      - Segreteria
+      summary: Assegnare prestazione e stanza
+      operationId: put_api_disponibilita_id_configurazione
+      description: 'Autorizzazione: DESK. Slot di 60 minuti non configurato, anche parzialmente; medico operativo
+        e abilitato, stanza senza sovrapposizioni. Configurazione unica, non modificabile. Nessun controllo esplicito
+        di orario futuro in questa operazione; prenotabilità verificata separatamente. Corpo massimo 8192 byte.
+        La query non viene esplicitamente rifiutata dal controller (non contiene parametri funzionali documentati).'
+      x-permission: DESK
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DisponibilitaResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfiguraDisponibilitaRequest'
+      x-source: src/main/java/it/medbook/controller/DisponibilitaController.java
+  /api/disponibilita/{id}/orario:
+    put:
+      tags:
+      - Medico
+      summary: Modificare orario di uno slot
+      operationId: put_api_disponibilita_id_orario
+      description: 'Autorizzazione: MEDICO. idMedico deve coincidere con la sessione. Slot futuro non configurato,
+        nessuna prenotazione associata in qualunque stato; nuovo intervallo esatto di 60 minuti e futuro. Query
+        non consentita.'
+      x-permission: MEDICO
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DisponibilitaResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreaDisponibilitaRequest'
+      x-source: src/main/java/it/medbook/controller/DisponibilitaController.java
+  /api/disponibilita/{id}:
+    delete:
+      tags:
+      - Medico
+      summary: Eliminare uno slot
+      operationId: delete_api_disponibilita_id
+      description: 'Autorizzazione: MEDICO. Slot futuro non configurato e senza prenotazioni associate in alcuno
+        stato. Risposta 204 senza corpo.'
+      x-permission: MEDICO
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - name: medicoId
+        in: query
+        required: true
+        description: Uguale a idUtente della sessione.
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '500':
+          $ref: '#/components/responses/E500'
+        '204':
+          description: Operazione completata.
+      x-source: src/main/java/it/medbook/controller/DisponibilitaController.java
+  /api/prenotazioni:
+    post:
+      tags:
+      - Prenotazioni
+      summary: Richiedere un appuntamento
+      operationId: post_api_prenotazioni
+      description: 'Autorizzazione: PAZIENTE. idPaziente deve coincidere con la sessione. Riverifica slot futuro
+        configurato e libero; crea RICHIESTA occupante e copia prezzo corrente. Corpo ispezionato dalla policy:
+        massimo 1 MiB. La query non viene esplicitamente rifiutata dal controller (non contiene parametri funzionali
+        documentati).'
+      x-permission: PAZIENTE
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '500':
+          $ref: '#/components/responses/E500'
+        '201':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrenotazioneResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreaPrenotazioneRequest'
+      x-source: src/main/java/it/medbook/controller/PrenotazioneController.java
+  /api/prenotazioni/paziente:
+    get:
+      tags:
+      - Prenotazioni
+      summary: Consultare i propri appuntamenti
+      operationId: get_api_prenotazioni_paziente
+      description: 'Autorizzazione: PAZIENTE. Nessun periodo obbligatorio; data alternativa a coppia dataDa/dataA
+        ordinata.'
+      x-permission: PAZIENTE
+      parameters:
+      - name: idPaziente
+        in: query
+        required: true
+        description: Uguale a idUtente della sessione.
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+      - name: stato
+        in: query
+        required: false
+        description: Filtro facoltativo.
+        schema:
+          type: string
+          enum:
+          - RICHIESTA
+          - CONFERMATA
+          - RIFIUTATA
+          - ANNULLATA
+          - EFFETTUATA
+          - PAZIENTE_ASSENTE
+          - NON_EROGATA
+      - name: data
+        in: query
+        required: false
+        description: data è alternativa a dataDa+dataA; gli estremi del periodo sono inclusi.
+        schema:
+          type: string
+          format: date
+      - name: dataDa
+        in: query
+        required: false
+        description: data è alternativa a dataDa+dataA; gli estremi del periodo sono inclusi.
+        schema:
+          type: string
+          format: date
+      - name: dataA
+        in: query
+        required: false
+        description: data è alternativa a dataDa+dataA; gli estremi del periodo sono inclusi.
+        schema:
+          type: string
+          format: date
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AppuntamentoPazienteResponse'
+      x-source: src/main/java/it/medbook/controller/PrenotazioneController.java
+  /api/prenotazioni/agenda:
+    get:
+      tags:
+      - Medico
+      summary: Consultare agenda personale
+      operationId: get_api_prenotazioni_agenda
+      description: 'Autorizzazione: MEDICO. Periodo massimo 31 giorni inclusi; senza date usa oggi. data alternativa
+        a dataDa+dataA.'
+      x-permission: MEDICO
+      parameters:
+      - name: medicoId
+        in: query
+        required: true
+        description: Uguale a idUtente della sessione.
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+      - name: data
+        in: query
+        required: false
+        description: data è alternativa a dataDa+dataA; gli estremi del periodo sono inclusi.
+        schema:
+          type: string
+          format: date
+      - name: dataDa
+        in: query
+        required: false
+        description: data è alternativa a dataDa+dataA; gli estremi del periodo sono inclusi.
+        schema:
+          type: string
+          format: date
+      - name: dataA
+        in: query
+        required: false
+        description: data è alternativa a dataDa+dataA; gli estremi del periodo sono inclusi.
+        schema:
+          type: string
+          format: date
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AppuntamentoAgendaResponse'
+      x-source: src/main/java/it/medbook/controller/PrenotazioneController.java
+  /api/prenotazioni/richieste:
+    get:
+      tags:
+      - Segreteria
+      summary: Elencare richieste e stati delle prenotazioni
+      operationId: get_api_prenotazioni_richieste
+      description: 'Autorizzazione: DESK. Senza stato restituisce RICHIESTA; TUTTE include ogni stato. data alternativa
+        agli estremi; dataDa e dataA possono essere usati anche singolarmente.'
+      x-permission: DESK
+      parameters:
+      - name: medicoId
+        in: query
+        required: false
+        description: Filtro facoltativo.
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+      - name: prestazioneId
+        in: query
+        required: false
+        description: Filtro facoltativo.
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+      - name: data
+        in: query
+        required: false
+        description: data è alternativa a dataDa+dataA; gli estremi del periodo sono inclusi.
+        schema:
+          type: string
+          format: date
+      - name: dataDa
+        in: query
+        required: false
+        description: data è alternativa a dataDa+dataA; gli estremi del periodo sono inclusi.
+        schema:
+          type: string
+          format: date
+      - name: dataA
+        in: query
+        required: false
+        description: data è alternativa a dataDa+dataA; gli estremi del periodo sono inclusi.
+        schema:
+          type: string
+          format: date
+      - name: stato
+        in: query
+        required: false
+        description: Filtro facoltativo.
+        schema:
+          type: string
+          enum:
+          - RICHIESTA
+          - CONFERMATA
+          - RIFIUTATA
+          - ANNULLATA
+          - EFFETTUATA
+          - PAZIENTE_ASSENTE
+          - NON_EROGATA
+          - TUTTE
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '405':
+          $ref: '#/components/responses/E405'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RichiestaPrenotazioneResponse'
+      x-source: src/main/java/it/medbook/controller/PrenotazioneController.java
+  /api/prenotazioni/desk:
+    get:
+      tags:
+      - Segreteria
+      summary: Consultare prenotazioni e dati economici
+      operationId: get_api_prenotazioni_desk
+      description: 'Autorizzazione: DESK. Periodo obbligatorio: data oppure coppia dataDa+dataA, massimo 31 giorni
+        inclusi. Include tentativi di pagamento e rimborsi; dati gestione indicano ultima gestione desk, non necessariamente
+        autore dello stato corrente.'
+      x-permission: DESK
+      parameters:
+      - name: medicoId
+        in: query
+        required: false
+        description: Filtro sul medico effettivo.
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+      - name: data
+        in: query
+        required: false
+        description: data è alternativa a dataDa+dataA; gli estremi del periodo sono inclusi.
+        schema:
+          type: string
+          format: date
+      - name: dataDa
+        in: query
+        required: false
+        description: data è alternativa a dataDa+dataA; gli estremi del periodo sono inclusi.
+        schema:
+          type: string
+          format: date
+      - name: dataA
+        in: query
+        required: false
+        description: data è alternativa a dataDa+dataA; gli estremi del periodo sono inclusi.
+        schema:
+          type: string
+          format: date
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '405':
+          $ref: '#/components/responses/E405'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PrenotazioneDeskResponse'
+      x-source: src/main/java/it/medbook/controller/PrenotazioneController.java
+  /api/prenotazioni/segnalazioni-indisponibilita:
+    get:
+      tags:
+      - Segreteria
+      summary: Elencare segnalazioni pendenti
+      operationId: get_api_prenotazioni_segnalazioni_indisponibilita
+      description: 'Autorizzazione: DESK. Nessuna query. Segnalazioni salvate nelle prenotazioni.'
+      x-permission: DESK
+      parameters: []
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '405':
+          $ref: '#/components/responses/E405'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SegnalazionePendenteResponse'
+      x-source: src/main/java/it/medbook/controller/PrenotazioneController.java
+  /api/prenotazioni/segnala-indisponibilita:
+    post:
+      tags:
+      - Medico
+      summary: Segnalare indisponibilità su prenotazioni
+      operationId: post_api_prenotazioni_segnala_indisponibilita
+      description: 'Autorizzazione: MEDICO. medicoId uguale alla sessione. Lista non vuota di prenotazioni future
+        RICHIESTA/CONFERMATA di competenza, senza duplicati. Aggiornamento atomico dell’intero gruppo. Non registra
+        un periodo di assenza né blocca gli slot liberi. Query non consentita.'
+      x-permission: MEDICO
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SegnalazioneIndisponibilitaResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SegnalaIndisponibilitaRequest'
+      x-source: src/main/java/it/medbook/controller/PrenotazioneController.java
+  /api/prenotazioni/{id}/conferma:
+    post:
+      tags:
+      - Segreteria
+      summary: Conferma
+      operationId: post_api_prenotazioni_id_conferma
+      description: 'Autorizzazione: DESK. Richiesta futura valida, nessuna indisponibilità pendente. Assegna medico
+        effettivo e registra gestione; nessun pagamento necessario. idOperatore deve coincidere con la sessione.
+        La query non viene esplicitamente rifiutata dal controller (non contiene parametri funzionali documentati).'
+      x-permission: DESK
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfermaPrenotazioneResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfermaPrenotazioneRequest'
+      x-source: src/main/java/it/medbook/controller/PrenotazioneController.java
+  /api/prenotazioni/{id}/rifiuta:
+    post:
+      tags:
+      - Segreteria
+      summary: Rifiuta
+      operationId: post_api_prenotazioni_id_rifiuta
+      description: 'Autorizzazione: DESK. Da RICHIESTA a RIFIUTATA; libera lo slot se altrimenti prenotabile. idOperatore
+        deve coincidere con la sessione. La query non viene esplicitamente rifiutata dal controller (non contiene
+        parametri funzionali documentati).'
+      x-permission: DESK
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RifiutoPrenotazioneResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RifiutoPrenotazioneRequest'
+      x-source: src/main/java/it/medbook/controller/PrenotazioneController.java
+  /api/prenotazioni/{id}/annulla:
+    post:
+      tags:
+      - Segreteria
+      summary: Annulla
+      operationId: post_api_prenotazioni_id_annulla
+      description: 'Autorizzazione: DESK. RICHIESTA: nessun pagamento associato. CONFERMATA: prima dell’inizio e
+        soli eventuali pagamenti FALLITO. Nessun rimborso automatico. idOperatore deve coincidere con la sessione.
+        La query non viene esplicitamente rifiutata dal controller (non contiene parametri funzionali documentati).'
+      x-permission: DESK
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnullamentoPrenotazioneResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnnullamentoPrenotazioneRequest'
+      x-source: src/main/java/it/medbook/controller/PrenotazioneController.java
+  /api/prenotazioni/{id}/annulla-paziente:
+    post:
+      tags:
+      - Prenotazioni
+      summary: Annulla paziente
+      operationId: post_api_prenotazioni_id_annulla_paziente
+      description: 'Autorizzazione: PAZIENTE. Prenotazione propria RICHIESTA/CONFERMATA prima dell’inizio. RICHIESTA
+        senza pagamenti; CONFERMATA con soli eventuali FALLITO. Non consente annullamento già pagato. idPaziente
+        deve coincidere con la sessione. La query non viene esplicitamente rifiutata dal controller (non contiene
+        parametri funzionali documentati).'
+      x-permission: PAZIENTE
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnullamentoPazienteResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnnullamentoPazienteRequest'
+      x-source: src/main/java/it/medbook/controller/PrenotazioneController.java
+  /api/prenotazioni/{id}/sostituisci-medico:
+    post:
+      tags:
+      - Segreteria
+      summary: Sostituisci medico
+      operationId: post_api_prenotazioni_id_sostituisci_medico
+      description: 'Autorizzazione: DESK. Segnalazione pendente, slot futuro. Sostituto diverso dal medico indisponibile,
+        operativo, abilitato e senza incompatibilità. Conferma la prenotazione e azzera segnalazione; nessuno storico
+        autonomo. idOperatore deve coincidere con la sessione. Query non consentita.'
+      x-permission: DESK
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SostituzioneMedicoResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SostituzioneMedicoRequest'
+      x-source: src/main/java/it/medbook/controller/PrenotazioneController.java
+  /api/prenotazioni/{id}/verifica-mancata-erogazione:
+    post:
+      tags:
+      - Segreteria
+      summary: Verifica mancata erogazione
+      operationId: post_api_prenotazioni_id_verifica_mancata_erogazione
+      description: 'Autorizzazione: DESK. Solo CONFERMATA dopo fine slot; esito PAZIENTE_ASSENTE o NON_EROGATA,
+        nessun pagamento IN_ATTESA. NON_EROGATA è accertamento desk, non prova automatica della causa; azzera la
+        segnalazione. idOperatore deve coincidere con la sessione. Query non consentita.'
+      x-permission: DESK
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificaMancataErogazioneResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerificaMancataErogazioneRequest'
+      x-source: src/main/java/it/medbook/controller/PrenotazioneController.java
+  /api/prenotazioni/{id}/pagamento-sede:
+    post:
+      tags:
+      - Pagamenti e rimborsi
+      summary: Pagamento sede
+      operationId: post_api_prenotazioni_id_pagamento_sede
+      description: 'Autorizzazione: DESK. Solo CONFERMATA senza indisponibilità pendente, prezzo positivo uguale
+        a importoAtteso, nessun pagamento diverso da FALLITO. Registra direttamente PAGATO; POS non integrato. idOperatore
+        deve coincidere con la sessione. Query non consentita.'
+      x-permission: DESK
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '500':
+          $ref: '#/components/responses/E500'
+        '201':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagamentoResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PagamentoSedeRequest'
+      x-source: src/main/java/it/medbook/controller/PrenotazioneController.java
+  /api/prenotazioni/{id}/pagamento-online:
+    post:
+      tags:
+      - Pagamenti e rimborsi
+      summary: Pagamento online
+      operationId: post_api_prenotazioni_id_pagamento_online
+      description: 'Autorizzazione: PAZIENTE. Solo prenotazione propria CONFERMATA senza indisponibilità pendente
+        e pagamento dovuto. Importo atteso uguale al prezzo. Gateway simulato sincrono: esito PAGATO/FALLITO configurato
+        dal server, identificativo SIM locale. Un fallimento è comunque risposta 201 con stato FALLITO; appuntamento
+        resta confermato. Query non consentita.'
+      x-permission: PAZIENTE
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '500':
+          $ref: '#/components/responses/E500'
+        '201':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagamentoPubblicoResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PagamentoOnlineRequest'
+      x-source: src/main/java/it/medbook/controller/PagamentoOnlineController.java
+  /api/prenotazioni/{id}/rimborso:
+    post:
+      tags:
+      - Pagamenti e rimborsi
+      summary: Rimborso
+      operationId: post_api_prenotazioni_id_rimborso
+      description: 'Autorizzazione: PAZIENTE. Richiesta motivata del proprietario. Solo NON_EROGATA senza segnalazione
+        pendente e unico pagamento valido ONLINE PAGATO, positivo e pari al prezzo; rimborso totale, una richiesta
+        per pagamento. No rimborsi per no-show, visite effettuate, incassi in sede o normale annullamento. Query
+        non consentita.'
+      x-permission: PAZIENTE
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '500':
+          $ref: '#/components/responses/E500'
+        '201':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RimborsoResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RichiestaRimborsoRequest'
+      x-source: src/main/java/it/medbook/controller/RimborsoController.java
+  /api/prenotazioni/{id}/registra-visita:
+    post:
+      tags:
+      - Medico
+      summary: Registra visita
+      operationId: post_api_prenotazioni_id_registra_visita
+      description: 'Autorizzazione: MEDICO. Corpo {} obbligatorio. Medico effettivo, CONFERMATA dopo fine slot,
+        nessuna indisponibilità pendente o pagamento IN_ATTESA. Non richiede pagamento riuscito. Passa a EFFETTUATA;
+        nessuna cartella clinica. Query non consentita.'
+      x-permission: MEDICO
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrazioneVisitaResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyObject'
+      x-source: src/main/java/it/medbook/controller/PrenotazioneController.java
+  /api/prenotazioni/{id}/pagamenti:
+    get:
+      tags:
+      - Pagamenti e rimborsi
+      summary: Consultare tentativi di pagamento propri
+      operationId: get_api_prenotazioni_id_pagamenti
+      description: 'Autorizzazione: PAZIENTE. Proprietà verificata dal backend; nessuna query.'
+      x-permission: PAZIENTE
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PagamentoPubblicoResponse'
+      x-source: src/main/java/it/medbook/controller/PagamentoOnlineController.java
+  /api/rimborsi/paziente:
+    get:
+      tags:
+      - Pagamenti e rimborsi
+      summary: Elenco del paziente autenticato
+      operationId: get_api_rimborsi_paziente
+      description: 'Autorizzazione: PAZIENTE. Elenco del paziente autenticato, nessuna query.'
+      x-permission: PAZIENTE
+      parameters: []
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '405':
+          $ref: '#/components/responses/E405'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RimborsoResponse'
+      x-source: src/main/java/it/medbook/controller/RimborsoController.java
+  /api/rimborsi/richieste:
+    get:
+      tags:
+      - Pagamenti e rimborsi
+      summary: Richieste RICHIESTO
+      operationId: get_api_rimborsi_richieste
+      description: 'Autorizzazione: DESK. Richieste RICHIESTO, nessuna query.'
+      x-permission: DESK
+      parameters: []
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '405':
+          $ref: '#/components/responses/E405'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RichiestaRimborsoDeskResponse'
+      x-source: src/main/java/it/medbook/controller/RimborsoController.java
+  /api/rimborsi/desk:
+    get:
+      tags:
+      - Pagamenti e rimborsi
+      summary: Storico amministrativo; stato predefinito RICHIESTO.
+      operationId: get_api_rimborsi_desk
+      description: 'Autorizzazione: DESK. Storico amministrativo; stato predefinito RICHIESTO.'
+      x-permission: DESK
+      parameters:
+      - name: stato
+        in: query
+        required: false
+        description: Filtro facoltativo.
+        schema:
+          type: string
+          enum:
+          - RICHIESTO
+          - APPROVATO
+          - RESPINTO
+          - TUTTI
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '405':
+          $ref: '#/components/responses/E405'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RichiestaRimborsoDeskResponse'
+      x-source: src/main/java/it/medbook/controller/RimborsoController.java
+  /api/rimborsi/{id}/approva:
+    post:
+      tags:
+      - Pagamenti e rimborsi
+      summary: Approva richiesta di rimborso
+      operationId: post_api_rimborsi_id_approva
+      description: 'Autorizzazione: DESK. Corpo {} obbligatorio, nessuna query. Solo richiesta RICHIESTO non ancora
+        decisa. Riverifica ammissibilità. Registra APPROVATO: non restituisce denaro e non invoca un gateway di
+        rimborso.'
+      x-permission: DESK
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DecisioneRimborsoResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyObject'
+      x-source: src/main/java/it/medbook/controller/RimborsoController.java
+  /api/rimborsi/{id}/respingi:
+    post:
+      tags:
+      - Pagamenti e rimborsi
+      summary: Respingi richiesta di rimborso
+      operationId: post_api_rimborsi_id_respingi
+      description: 'Autorizzazione: DESK. Corpo {} obbligatorio, nessuna query. Solo richiesta RICHIESTO non ancora
+        decisa. Registra RESPINTO; non esegue operazioni finanziarie.'
+      x-permission: DESK
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DecisioneRimborsoResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyObject'
+      x-source: src/main/java/it/medbook/controller/RimborsoController.java
+  /api/prenotazioni/{id}/referto:
+    get:
+      tags:
+      - Referti
+      summary: Leggere metadati del proprio referto
+      operationId: get_api_prenotazioni_id_referto
+      description: 'Autorizzazione: PAZIENTE. Solo proprietario. Nessuna query, corpo GET vuoto; non espone chiave
+        storage.'
+      x-permission: PAZIENTE
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefertoResponse'
+      x-source: src/main/java/it/medbook/controller/RefertoController.java
+    post:
+      tags:
+      - Referti
+      summary: Caricare un PDF
+      operationId: post_api_prenotazioni_id_referto
+      description: 'Autorizzazione: MEDICO. Medico effettivo operativo, prenotazione EFFETTUATA, nessun referto
+        già presente. Corpo PDF binario non vuoto, massimo 10 MiB (10485760 byte), validato con PDFBox/qpdf. Content-Type
+        esattamente application/pdf senza parametri (confronto case-insensitive). Nessun multipart e nessun nome
+        file nel JSON. Content-Encoding assente o identity; Content-Length facoltativo, se presente coerente e senza
+        Transfer-Encoding. Nessuna query. Documento unico non modificabile.'
+      x-permission: MEDICO
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '413':
+          $ref: '#/components/responses/E413'
+        '415':
+          $ref: '#/components/responses/E415'
+        '500':
+          $ref: '#/components/responses/E500'
+        '201':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaricamentoRefertoResponse'
+      requestBody:
+        required: true
+        content:
+          application/pdf:
+            schema:
+              type: string
+              format: binary
+              description: Byte del PDF, non un oggetto multipart né una stringa Base64.
+      x-source: src/main/java/it/medbook/controller/RefertoController.java
+  /api/prenotazioni/{id}/referto/documento:
+    get:
+      tags:
+      - Referti
+      summary: Scaricare il proprio PDF
+      operationId: get_api_prenotazioni_id_referto_documento
+      description: 'Autorizzazione: PAZIENTE. Solo proprietario, nessuna query e corpo GET vuoto. Dopo l’inizio
+        dello streaming un errore può interrompere il download, senza una seconda risposta JSON.'
+      x-permission: PAZIENTE
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Documento PDF come allegato.
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              example: attachment; filename="referto-105.pdf"
+            Content-Length:
+              schema:
+                type: integer
+                minimum: 1
+            Cache-Control:
+              schema:
+                type: string
+              example: no-store
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+      x-source: src/main/java/it/medbook/controller/RefertoController.java
+  /api/medici:
+    get:
+      tags:
+      - Amministratore
+      summary: Elencare medici
+      operationId: get_api_medici
+      description: 'Autorizzazione: AMMINISTRATORE_O_DESK. La proiezione dipende dal ruolo: amministratore con email/profili/ruolo,
+        desk con dati operativi ridotti. Nessuna query nel dettaglio.'
+      x-permission: AMMINISTRATORE_O_DESK
+      parameters:
+      - name: stato
+        in: query
+        required: false
+        description: Filtro facoltativo.
+        schema:
+          type: string
+          enum:
+          - ATTIVO
+          - INATTIVO
+      - name: idPrestazione
+        in: query
+        required: false
+        description: Filtro facoltativo.
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '500':
+          $ref: '#/components/responses/E500'
+        '503':
+          description: Contesa temporanea sul mutex account.
+          headers:
+            Retry-After:
+              schema:
+                type: string
+              example: '5'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                - type: array
+                  items:
+                    $ref: '#/components/schemas/MedicoResponse'
+                - type: array
+                  items:
+                    $ref: '#/components/schemas/MedicoDeskResponse'
+      x-source: src/main/java/it/medbook/controller/MedicoController.java
+    post:
+      tags:
+      - Amministratore
+      summary: Crea nuovo account medico.
+      operationId: post_api_medici
+      description: 'Autorizzazione: AMMINISTRATORE. Corpo massimo 8192 byte, nessuna query. Crea nuovo account medico.'
+      x-permission: AMMINISTRATORE
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '413':
+          $ref: '#/components/responses/E413'
+        '415':
+          $ref: '#/components/responses/E415'
+        '500':
+          $ref: '#/components/responses/E500'
+        '503':
+          description: Contesa temporanea sul mutex account.
+          headers:
+            Retry-After:
+              schema:
+                type: string
+              example: '5'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '201':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MedicoResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NuovoMedicoRequest'
+      x-source: src/main/java/it/medbook/controller/MedicoController.java
+  /api/medici/{id}:
+    get:
+      tags:
+      - Amministratore
+      summary: Consultare dettaglio medico
+      operationId: get_api_medici_id
+      description: 'Autorizzazione: AMMINISTRATORE_O_DESK. La proiezione dipende dal ruolo: amministratore con email/profili/ruolo,
+        desk con dati operativi ridotti. Nessuna query nel dettaglio.'
+      x-permission: AMMINISTRATORE_O_DESK
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '500':
+          $ref: '#/components/responses/E500'
+        '503':
+          description: Contesa temporanea sul mutex account.
+          headers:
+            Retry-After:
+              schema:
+                type: string
+              example: '5'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                - $ref: '#/components/schemas/DettaglioMedicoAdminResponse'
+                - $ref: '#/components/schemas/DettaglioMedicoDeskResponse'
+      x-source: src/main/java/it/medbook/controller/MedicoController.java
+    put:
+      tags:
+      - Amministratore
+      summary: tipo PERSONALI oppure PROFESSIONALI con i rispettivi campi; nessun aggiornamento parziale.
+      operationId: put_api_medici_id
+      description: 'Autorizzazione: AMMINISTRATORE. Corpo massimo 8192 byte, nessuna query. tipo PERSONALI oppure
+        PROFESSIONALI con i rispettivi campi; nessun aggiornamento parziale.'
+      x-permission: AMMINISTRATORE
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '413':
+          $ref: '#/components/responses/E413'
+        '415':
+          $ref: '#/components/responses/E415'
+        '500':
+          $ref: '#/components/responses/E500'
+        '503':
+          description: Contesa temporanea sul mutex account.
+          headers:
+            Retry-After:
+              schema:
+                type: string
+              example: '5'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MedicoResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModificaMedicoRequest'
+      x-source: src/main/java/it/medbook/controller/MedicoController.java
+  /api/medici/{id}/collegamento:
+    post:
+      tags:
+      - Amministratore
+      summary: id è un account esistente cui aggiungere il profilo medico.
+      operationId: post_api_medici_id_collegamento
+      description: 'Autorizzazione: AMMINISTRATORE. Corpo massimo 8192 byte, nessuna query. id è un account esistente
+        cui aggiungere il profilo medico.'
+      x-permission: AMMINISTRATORE
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '413':
+          $ref: '#/components/responses/E413'
+        '415':
+          $ref: '#/components/responses/E415'
+        '500':
+          $ref: '#/components/responses/E500'
+        '503':
+          description: Contesa temporanea sul mutex account.
+          headers:
+            Retry-After:
+              schema:
+                type: string
+              example: '5'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '201':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MedicoResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CollegamentoMedicoRequest'
+      x-source: src/main/java/it/medbook/controller/MedicoController.java
+  /api/medici/{id}/stato:
+    put:
+      tags:
+      - Amministratore
+      summary: Gestisce stato del profilo, distinto dallo stato accesso account.
+      operationId: put_api_medici_id_stato
+      description: 'Autorizzazione: AMMINISTRATORE. Corpo massimo 8192 byte, nessuna query. Gestisce stato del profilo,
+        distinto dallo stato accesso account.'
+      x-permission: AMMINISTRATORE
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '413':
+          $ref: '#/components/responses/E413'
+        '415':
+          $ref: '#/components/responses/E415'
+        '500':
+          $ref: '#/components/responses/E500'
+        '503':
+          description: Contesa temporanea sul mutex account.
+          headers:
+            Retry-After:
+              schema:
+                type: string
+              example: '5'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MedicoResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatoMedicoRequest'
+      x-source: src/main/java/it/medbook/controller/MedicoController.java
+  /api/medici/{id}/prestazioni:
+    put:
+      tags:
+      - Amministratore
+      summary: ASSEGNA o RIMUOVI abilitazione secondo vincoli del backend.
+      operationId: put_api_medici_id_prestazioni
+      description: 'Autorizzazione: AMMINISTRATORE. Corpo massimo 8192 byte, nessuna query. ASSEGNA o RIMUOVI abilitazione
+        secondo vincoli del backend.'
+      x-permission: AMMINISTRATORE
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '413':
+          $ref: '#/components/responses/E413'
+        '415':
+          $ref: '#/components/responses/E415'
+        '500':
+          $ref: '#/components/responses/E500'
+        '503':
+          description: Contesa temporanea sul mutex account.
+          headers:
+            Retry-After:
+              schema:
+                type: string
+              example: '5'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperazionePrestazioneMedicoResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AbilitazioneRequest'
+      x-source: src/main/java/it/medbook/controller/MedicoController.java
+  /api/medici/{id}/password:
+    put:
+      tags:
+      - Amministratore
+      summary: Reimposta password e invalida sessioni precedenti.
+      operationId: put_api_medici_id_password
+      description: 'Autorizzazione: AMMINISTRATORE. Corpo massimo 8192 byte, nessuna query. Reimposta password e
+        invalida sessioni precedenti.'
+      x-permission: AMMINISTRATORE
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '413':
+          $ref: '#/components/responses/E413'
+        '415':
+          $ref: '#/components/responses/E415'
+        '500':
+          $ref: '#/components/responses/E500'
+        '503':
+          description: Contesa temporanea sul mutex account.
+          headers:
+            Retry-After:
+              schema:
+                type: string
+              example: '5'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResetPasswordMedicoResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      x-source: src/main/java/it/medbook/controller/MedicoController.java
+  /api/pazienti:
+    get:
+      tags:
+      - Segreteria
+      summary: Ricercare pazienti
+      operationId: get_api_pazienti
+      description: 'Autorizzazione: DESK. Filtri facoltativi, paginazione per ID: prossimoDopoId null indica fine
+        risultati.'
+      x-permission: DESK
+      parameters:
+      - name: idPaziente
+        in: query
+        required: false
+        description: Filtro facoltativo.
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+      - name: nome
+        in: query
+        required: false
+        description: Ricerca per prefisso.
+        schema:
+          type: string
+      - name: cognome
+        in: query
+        required: false
+        description: Ricerca per prefisso.
+        schema:
+          type: string
+      - name: email
+        in: query
+        required: false
+        description: Ricerca per prefisso.
+        schema:
+          type: string
+      - name: dopoId
+        in: query
+        required: false
+        description: Filtro facoltativo.
+        schema:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 2147483647
+          description: Identificativo positivo.
+          default: 0
+      - name: limite
+        in: query
+        required: false
+        description: Filtro facoltativo.
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 50
+          description: Identificativo positivo.
+          default: 20
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '500':
+          $ref: '#/components/responses/E500'
+        '503':
+          description: Contesa temporanea sul mutex account.
+          headers:
+            Retry-After:
+              schema:
+                type: string
+              example: '5'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ElencoPazientiDeskResponse'
+      x-source: src/main/java/it/medbook/controller/PazienteDeskController.java
+  /api/pazienti/{id}/collegamento:
+    post:
+      tags:
+      - Segreteria
+      summary: Aggiungere profilo paziente a un account
+      operationId: post_api_pazienti_id_collegamento
+      description: 'Autorizzazione: DESK. id è account esistente; credenziali invariate. Corpo massimo 8192 byte,
+        nessuna query.'
+      x-permission: DESK
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '413':
+          $ref: '#/components/responses/E413'
+        '415':
+          $ref: '#/components/responses/E415'
+        '500':
+          $ref: '#/components/responses/E500'
+        '503':
+          description: Contesa temporanea sul mutex account.
+          headers:
+            Retry-After:
+              schema:
+                type: string
+              example: '5'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '201':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollegamentoPazienteResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CollegamentoPazienteRequest'
+      x-source: src/main/java/it/medbook/controller/PazienteDeskController.java
+  /api/pazienti/{id}/password:
+    put:
+      tags:
+      - Segreteria
+      summary: Reimpostare password paziente
+      operationId: put_api_pazienti_id_password
+      description: 'Autorizzazione: DESK. Invalida sessioni precedenti; nuove password paziente 8–1024 unità UTF-16.
+        Corpo massimo 8192 byte, nessuna query.'
+      x-permission: DESK
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '413':
+          $ref: '#/components/responses/E413'
+        '415':
+          $ref: '#/components/responses/E415'
+        '500':
+          $ref: '#/components/responses/E500'
+        '503':
+          description: Contesa temporanea sul mutex account.
+          headers:
+            Retry-After:
+              schema:
+                type: string
+              example: '5'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResetPasswordPazienteResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      x-source: src/main/java/it/medbook/controller/PazienteDeskController.java
+  /api/utenti:
+    get:
+      tags:
+      - Amministratore
+      summary: Elencare account gestionali
+      operationId: get_api_utenti
+      description: 'Autorizzazione: AMMINISTRATORE. Nessuna query. Non è l’elenco generale di tutti i pazienti/medici.'
+      x-permission: AMMINISTRATORE
+      parameters: []
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '405':
+          $ref: '#/components/responses/E405'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AccountInternoResponse'
+      x-source: src/main/java/it/medbook/controller/UtenteController.java
+    post:
+      tags:
+      - Amministratore
+      summary: Creare account gestionale
+      operationId: post_api_utenti
+      description: 'Autorizzazione: AMMINISTRATORE. Ruolo AMMINISTRATORE o OPERATORE_DESK. Corpo massimo 8192 byte,
+        nessuna query.'
+      x-permission: AMMINISTRATORE
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '415':
+          $ref: '#/components/responses/E415'
+        '500':
+          $ref: '#/components/responses/E500'
+        '503':
+          description: Contesa temporanea sul mutex account.
+          headers:
+            Retry-After:
+              schema:
+                type: string
+              example: '5'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '201':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountInternoResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountInternoRequest'
+      x-source: src/main/java/it/medbook/controller/UtenteController.java
+  /api/utenti/{id}/ruolo:
+    put:
+      tags:
+      - Amministratore
+      summary: Cambiare ruolo gestionale
+      operationId: put_api_utenti_id_ruolo
+      description: 'Autorizzazione: AMMINISTRATORE. Solo ruoli gestionali previsti; nessun ruolo PAZIENTE/MEDICO
+        in questo campo. Corpo massimo 8192 byte, nessuna query.'
+      x-permission: AMMINISTRATORE
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '415':
+          $ref: '#/components/responses/E415'
+        '500':
+          $ref: '#/components/responses/E500'
+        '503':
+          description: Contesa temporanea sul mutex account.
+          headers:
+            Retry-After:
+              schema:
+                type: string
+              example: '5'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountInternoResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuoloUtenteRequest'
+      x-source: src/main/java/it/medbook/controller/UtenteController.java
+  /api/utenti/{id}/stato:
+    put:
+      tags:
+      - Amministratore
+      summary: Disabilitare o riabilitare account
+      operationId: put_api_utenti_id_stato
+      description: 'Autorizzazione: AMMINISTRATORE. ATTIVO o DISABILITATO. Dopo commit revoca sessioni superate;
+        risposta 200 anche senza cambio effettivo. Corpo massimo 8192 byte, nessuna query.'
+      x-permission: AMMINISTRATORE
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        description: ID intero positivo (max Integer Java).
+      - $ref: '#/components/parameters/Origin'
+      - $ref: '#/components/parameters/Csrf'
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '404':
+          $ref: '#/components/responses/E404'
+        '405':
+          $ref: '#/components/responses/E405'
+        '409':
+          $ref: '#/components/responses/E409'
+        '415':
+          $ref: '#/components/responses/E415'
+        '500':
+          $ref: '#/components/responses/E500'
+        '503':
+          description: Contesa temporanea sul mutex account.
+          headers:
+            Retry-After:
+              schema:
+                type: string
+              example: '5'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UtenteAmministrativoResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatoAccessoRequest'
+      x-source: src/main/java/it/medbook/controller/UtenteController.java
+  /api/utenti/ricerca:
+    get:
+      tags:
+      - Amministratore
+      summary: Ricercare utenti per filtri
+      operationId: get_api_utenti_ricerca
+      description: 'Autorizzazione: AMMINISTRATORE. Obbligatorio almeno un filtro tra idUtente, email, cognome,
+        codiceFiscale, ruolo, statoAccesso. Solo paginazione non sufficiente. prossimoDopoId null a fine elenco;
+        nomi/valori query vuoti, duplicati o sconosciuti rifiutati.'
+      x-permission: AMMINISTRATORE
+      parameters:
+      - name: idUtente
+        in: query
+        required: false
+        description: Filtro facoltativo.
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+      - name: email
+        in: query
+        required: false
+        description: Prefisso normalizzato, minimo 3 caratteri.
+        schema:
+          type: string
+      - name: cognome
+        in: query
+        required: false
+        description: Prefisso, minimo 2 caratteri.
+        schema:
+          type: string
+      - name: codiceFiscale
+        in: query
+        required: false
+        description: Filtro facoltativo.
+        schema:
+          type: string
+      - name: ruolo
+        in: query
+        required: false
+        description: Filtro facoltativo.
+        schema:
+          type: string
+          enum:
+          - AMMINISTRATORE
+          - OPERATORE_DESK
+          - NESSUNO
+      - name: statoAccesso
+        in: query
+        required: false
+        description: Filtro facoltativo.
+        schema:
+          type: string
+          enum:
+          - ATTIVO
+          - DISABILITATO
+      - name: dopoId
+        in: query
+        required: false
+        description: Filtro facoltativo.
+        schema:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 2147483647
+          description: Identificativo positivo.
+          default: 0
+      - name: limite
+        in: query
+        required: false
+        description: Filtro facoltativo.
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 50
+          description: Identificativo positivo.
+          default: 20
+      responses:
+        '400':
+          $ref: '#/components/responses/E400'
+        '401':
+          $ref: '#/components/responses/E401'
+        '403':
+          $ref: '#/components/responses/E403'
+        '405':
+          $ref: '#/components/responses/E405'
+        '500':
+          $ref: '#/components/responses/E500'
+        '200':
+          description: Operazione completata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RicercaUtentiResponse'
+      x-source: src/main/java/it/medbook/controller/UtenteController.java
+components:
+  securitySchemes:
+    SessioneLocale:
+      type: apiKey
+      in: cookie
+      name: medbook_local_session
+      description: Solo configurazione local-http.
+    SessioneHttps:
+      type: apiKey
+      in: cookie
+      name: __Host-medbook_session
+      description: Configurazione https; cookie Secure.
+  schemas:
+    StatoPrenotazione:
+      type: string
+      enum:
+      - RICHIESTA
+      - CONFERMATA
+      - RIFIUTATA
+      - ANNULLATA
+      - EFFETTUATA
+      - PAZIENTE_ASSENTE
+      - NON_EROGATA
+    StatoRimborso:
+      type: string
+      enum:
+      - RICHIESTO
+      - APPROVATO
+      - RESPINTO
+      - IN_ELABORAZIONE
+      - RIMBORSATO
+      - FALLITO
+      description: Enum del modello. Le API correnti producono RICHIESTO, APPROVATO o RESPINTO; gli altri valori
+        non corrispondono a un flusso di esecuzione del rimborso implementato.
+    RuoloGestionale:
+      type: string
+      enum:
+      - AMMINISTRATORE
+      - OPERATORE_DESK
+    StatoPagamento:
+      type: string
+      enum:
+      - IN_ATTESA
+      - PAGATO
+      - FALLITO
+    ModalitaPagamento:
+      type: string
+      enum:
+      - ONLINE
+      - DESK_POS
+      - DESK_CONTANTI
+    StanzaRequest:
+      type: object
+      properties:
+        nome:
+          type: string
+        descrizione:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
+      description: Corpo JSON; campi sconosciuti non ammessi.
+      required:
+      - nome
+      x-source: src/main/java/it/medbook/dto/StanzaRequest.java
+      example:
+        nome: Ambulatorio demo
+        descrizione: Stanza dimostrativa
+    UtenteAmministrativoResponse:
+      type: object
+      properties:
+        idUtente:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nome:
+          type:
+          - string
+          - 'null'
+        cognome:
+          type:
+          - string
+          - 'null'
+        codiceFiscale:
+          type:
+          - string
+          - 'null'
+        email:
+          type:
+          - string
+          - 'null'
+        ruoloGestionale:
+          anyOf:
+          - $ref: '#/components/schemas/RuoloGestionale'
+          - type: 'null'
+        statoAccesso:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/UtenteAmministrativoResponse.java. I valori di
+        risposta possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/UtenteAmministrativoResponse.java
+    CollegamentoPazienteResponse:
+      type: object
+      properties:
+        idPaziente:
+          type: integer
+          format: int32
+        paziente:
+          type: boolean
+        message:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/CollegamentoPazienteResponse.java. I valori di
+        risposta possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/CollegamentoPazienteResponse.java
+    AccountInternoRequest:
+      type: object
+      properties:
+        nome:
+          type: string
+        cognome:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+          format: password
+          writeOnly: true
+          description: 'Password senza trim: 12–1024 unità UTF-16 per medico/gestionale; 8–1024 per paziente. ResetPasswordRequest
+            è condiviso: vale la categoria della rotta. Unicode scalare valido.'
+        ruoloGestionale:
+          $ref: '#/components/schemas/RuoloGestionale'
+      additionalProperties: false
+      description: Corpo JSON; campi sconosciuti non ammessi.
+      required:
+      - nome
+      - cognome
+      - email
+      - password
+      - ruoloGestionale
+      x-source: src/main/java/it/medbook/dto/AccountInternoRequest.java
+    DettaglioMedicoAdminResponse:
+      type: object
+      properties:
+        medico:
+          anyOf:
+          - $ref: '#/components/schemas/MedicoResponse'
+          - type: 'null'
+        prestazioniAutorizzate:
+          type:
+          - array
+          - 'null'
+          items:
+            $ref: '#/components/schemas/PrestazioneResponse'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/DettaglioMedicoAdminResponse.java. I valori di
+        risposta possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/DettaglioMedicoAdminResponse.java
+    DisponibilitaResponse:
+      type: object
+      properties:
+        idDisponibilita:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        dataOraInizio:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        dataOraFine:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        idMedico:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        idPrestazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomePrestazione:
+          type:
+          - string
+          - 'null'
+        idStanza:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomeStanza:
+          type:
+          - string
+          - 'null'
+        configurata:
+          type: boolean
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/DisponibilitaResponse.java. I valori di risposta
+        possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/DisponibilitaResponse.java
+    RichiestaRimborsoDeskResponse:
+      type: object
+      properties:
+        idOperatore:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomeOperatore:
+          type:
+          - string
+          - 'null'
+        cognomeOperatore:
+          type:
+          - string
+          - 'null'
+        idRimborso:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        idPrenotazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        idPagamento:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        stato:
+          anyOf:
+          - $ref: '#/components/schemas/StatoRimborso'
+          - type: 'null'
+        importo:
+          type:
+          - number
+          - 'null'
+          description: Numero JSON decimale; importi in euro, precisione di due decimali nelle operazioni economiche.
+        motivazione:
+          type:
+          - string
+          - 'null'
+        richiestoIl:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        verificatoIl:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        idPaziente:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomePaziente:
+          type:
+          - string
+          - 'null'
+        cognomePaziente:
+          type:
+          - string
+          - 'null'
+        idPrestazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomePrestazione:
+          type:
+          - string
+          - 'null'
+        dataOraInizio:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        dataOraFine:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        modalitaPagamento:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/RichiestaRimborsoDeskResponse.java. I valori di
+        risposta possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/RichiestaRimborsoDeskResponse.java
+    DecisioneRimborsoResponse:
+      type: object
+      properties:
+        idRimborso:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        stato:
+          anyOf:
+          - $ref: '#/components/schemas/StatoRimborso'
+          - type: 'null'
+        idOperatore:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        verificatoIl:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/DecisioneRimborsoResponse.java. I valori di risposta
+        possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/DecisioneRimborsoResponse.java
+    RichiestaRimborsoRequest:
+      type: object
+      properties:
+        motivazione:
+          type: string
+          minLength: 1
+          maxLength: 500
+      additionalProperties: false
+      description: Corpo JSON; campi sconosciuti non ammessi.
+      required:
+      - motivazione
+      x-source: src/main/java/it/medbook/dto/RichiestaRimborsoRequest.java
+      example:
+        motivazione: Prestazione dimostrativa non erogata.
+    PrestazioneResponse:
+      type: object
+      properties:
+        idPrestazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nome:
+          type:
+          - string
+          - 'null'
+        descrizione:
+          type:
+          - string
+          - 'null'
+        durata:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        prezzo:
+          type:
+          - number
+          - 'null'
+          description: Numero JSON decimale; importi in euro, precisione di due decimali nelle operazioni economiche.
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/PrestazioneResponse.java. I valori di risposta
+        possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/PrestazioneResponse.java
+    OperazionePrestazioneMedicoResponse:
+      type: object
+      properties:
+        idMedico:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        idPrestazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        operazione:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/OperazionePrestazioneMedicoResponse.java. I valori
+        di risposta possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/OperazionePrestazioneMedicoResponse.java
+    PrestazioneRequest:
+      type: object
+      properties:
+        nome:
+          type: string
+        descrizione:
+          type:
+          - string
+          - 'null'
+        durata:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 60
+        prezzo:
+          type: number
+          description: Numero JSON decimale; importi in euro, precisione di due decimali nelle operazioni economiche.
+          minimum: 0
+          maximum: 99999999.99
+          multipleOf: 0.01
+      additionalProperties: false
+      description: Corpo JSON; campi sconosciuti non ammessi.
+      required:
+      - nome
+      - durata
+      - prezzo
+      x-source: src/main/java/it/medbook/dto/PrestazioneRequest.java
+      example:
+        nome: Visita dimostrativa
+        descrizione: Prestazione fittizia per il project work
+        durata: 30
+        prezzo: 80
+    DisponibilitaPrenotabileResponse:
+      type: object
+      properties:
+        idDisponibilita:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        dataOraInizio:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        dataOraFine:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        idMedico:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomeMedico:
+          type:
+          - string
+          - 'null'
+        cognomeMedico:
+          type:
+          - string
+          - 'null'
+        idPrestazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomePrestazione:
+          type:
+          - string
+          - 'null'
+        durataPrestazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        prezzoPrestazione:
+          type:
+          - number
+          - 'null'
+          description: Numero JSON decimale; importi in euro, precisione di due decimali nelle operazioni economiche.
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/DisponibilitaPrenotabileResponse.java. I valori
+        di risposta possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/DisponibilitaPrenotabileResponse.java
+    MedicoDeskResponse:
+      type: object
+      properties:
+        idUtente:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nome:
+          type:
+          - string
+          - 'null'
+        cognome:
+          type:
+          - string
+          - 'null'
+        specializzazione:
+          type:
+          - string
+          - 'null'
+        numeroIscrizioneOrdine:
+          type:
+          - string
+          - 'null'
+        stato:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/MedicoDeskResponse.java. I valori di risposta
+        possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/MedicoDeskResponse.java
+    RefertoResponse:
+      type: object
+      properties:
+        idReferto:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        idPrenotazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomeFile:
+          type:
+          - string
+          - 'null'
+        caricatoIl:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/RefertoResponse.java. I valori di risposta possono
+        essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/RefertoResponse.java
+    StanzaResponse:
+      type: object
+      properties:
+        idStanza:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nome:
+          type:
+          - string
+          - 'null'
+        descrizione:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/StanzaResponse.java. I valori di risposta possono
+        essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/StanzaResponse.java
+    PrenotazioneResponse:
+      type: object
+      properties:
+        idPrenotazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        stato:
+          anyOf:
+          - $ref: '#/components/schemas/StatoPrenotazione'
+          - type: 'null'
+        dataOraRichiesta:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        prezzo:
+          type:
+          - number
+          - 'null'
+          description: Numero JSON decimale; importi in euro, precisione di due decimali nelle operazioni economiche.
+        idDisponibilita:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        dataOraInizio:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        dataOraFine:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        idPrestazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomePrestazione:
+          type:
+          - string
+          - 'null'
+        idMedico:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomeMedico:
+          type:
+          - string
+          - 'null'
+        cognomeMedico:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/PrenotazioneResponse.java. I valori di risposta
+        possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/PrenotazioneResponse.java
+    PagamentoSedeRequest:
+      type: object
+      properties:
+        idOperatore:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Se identifica l’attore, deve coincidere con idUtente della sessione.
+        modalita:
+          type: string
+          enum:
+          - DESK_POS
+          - DESK_CONTANTI
+        importoAtteso:
+          type: number
+          description: Numero JSON decimale; importi in euro, precisione di due decimali nelle operazioni economiche.
+      additionalProperties: false
+      description: Corpo JSON; campi sconosciuti non ammessi.
+      required:
+      - idOperatore
+      - modalita
+      - importoAtteso
+      x-source: src/main/java/it/medbook/dto/PagamentoSedeRequest.java
+    ResetPasswordMedicoResponse:
+      type: object
+      properties:
+        idMedico:
+          type: integer
+          format: int32
+        message:
+          type:
+          - string
+          - 'null'
+        sessioniInvalidate:
+          type: boolean
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/ResetPasswordMedicoResponse.java. I valori di
+        risposta possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/ResetPasswordMedicoResponse.java
+    RicercaUtentiResponse:
+      type: object
+      properties:
+        risultati:
+          type:
+          - array
+          - 'null'
+          items:
+            $ref: '#/components/schemas/UtenteAmministrativoResponse'
+        prossimoDopoId:
+          type:
+          - integer
+          - 'null'
+          format: int32
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/RicercaUtentiResponse.java. I valori di risposta
+        possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/RicercaUtentiResponse.java
+    ConfermaPrenotazioneRequest:
+      type: object
+      properties:
+        idOperatore:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Se identifica l’attore, deve coincidere con idUtente della sessione.
+      additionalProperties: false
+      description: Corpo JSON; campi sconosciuti non ammessi.
+      required:
+      - idOperatore
+      x-source: src/main/java/it/medbook/dto/ConfermaPrenotazioneRequest.java
+    CreaPrenotazioneRequest:
+      type: object
+      properties:
+        idPaziente:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Se identifica l’attore, deve coincidere con idUtente della sessione.
+        idDisponibilita:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+      additionalProperties: false
+      description: Corpo JSON; campi sconosciuti non ammessi.
+      required:
+      - idPaziente
+      - idDisponibilita
+      x-source: src/main/java/it/medbook/dto/CreaPrenotazioneRequest.java
+      example:
+        idPaziente: 21
+        idDisponibilita: 105
+    SostituzioneMedicoRequest:
+      type: object
+      properties:
+        idOperatore:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Se identifica l’attore, deve coincidere con idUtente della sessione.
+        idMedicoSostituto:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        statoAtteso:
+          type: string
+          enum:
+          - RICHIESTA
+          - CONFERMATA
+        idMedicoIndisponibile:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+      additionalProperties: false
+      description: Corpo JSON; campi sconosciuti non ammessi.
+      required:
+      - idOperatore
+      - idMedicoSostituto
+      - statoAtteso
+      - idMedicoIndisponibile
+      x-source: src/main/java/it/medbook/dto/SostituzioneMedicoRequest.java
+    ResetPasswordPazienteResponse:
+      type: object
+      properties:
+        idPaziente:
+          type: integer
+          format: int32
+        message:
+          type:
+          - string
+          - 'null'
+        sessioniInvalidate:
+          type: boolean
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/ResetPasswordPazienteResponse.java. I valori di
+        risposta possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/ResetPasswordPazienteResponse.java
+    AppuntamentoAgendaResponse:
+      type: object
+      properties:
+        indisponibilitaSegnalata:
+          type: boolean
+        refertoPresente:
+          type: boolean
+        idPrenotazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        idDisponibilita:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        stato:
+          anyOf:
+          - $ref: '#/components/schemas/StatoPrenotazione'
+          - type: 'null'
+        dataOraInizio:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        dataOraFine:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        idMedicoTitolare:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        idMedicoEffettivo:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        idPrestazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomePrestazione:
+          type:
+          - string
+          - 'null'
+        durataPrestazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        idStanza:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomeStanza:
+          type:
+          - string
+          - 'null'
+        idPaziente:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomePaziente:
+          type:
+          - string
+          - 'null'
+        cognomePaziente:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/AppuntamentoAgendaResponse.java. I valori di risposta
+        possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/AppuntamentoAgendaResponse.java
+    RimborsoResponse:
+      type: object
+      properties:
+        idRimborso:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        idPrenotazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        idPagamento:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        stato:
+          anyOf:
+          - $ref: '#/components/schemas/StatoRimborso'
+          - type: 'null'
+        importo:
+          type:
+          - number
+          - 'null'
+          description: Numero JSON decimale; importi in euro, precisione di due decimali nelle operazioni economiche.
+        motivazione:
+          type:
+          - string
+          - 'null'
+        richiestoIl:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        verificatoIl:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/RimborsoResponse.java. I valori di risposta possono
+        essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/RimborsoResponse.java
+    RegistrazionePazienteRequest:
+      type: object
+      properties:
+        nome:
+          type: string
+        cognome:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+          format: password
+          writeOnly: true
+          description: 8–1024 unità UTF-16, senza trim né requisito di composizione; Unicode scalare valido.
+        codiceFiscale:
+          type: string
+        dataNascita:
+          type: string
+          format: date
+        telefono:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
+      required:
+      - nome
+      - cognome
+      - email
+      - password
+      - codiceFiscale
+      - dataNascita
+    VerificaMancataErogazioneRequest:
+      type: object
+      properties:
+        idOperatore:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Se identifica l’attore, deve coincidere con idUtente della sessione.
+        statoAtteso:
+          type: string
+          enum:
+          - CONFERMATA
+        esito:
+          type: string
+          enum:
+          - PAZIENTE_ASSENTE
+          - NON_EROGATA
+      additionalProperties: false
+      description: Corpo JSON; campi sconosciuti non ammessi.
+      required:
+      - idOperatore
+      - statoAtteso
+      - esito
+      x-source: src/main/java/it/medbook/dto/VerificaMancataErogazioneRequest.java
+    PazienteDeskResponse:
+      type: object
+      properties:
+        idPaziente:
+          type: integer
+          format: int32
+        nome:
+          type:
+          - string
+          - 'null'
+        cognome:
+          type:
+          - string
+          - 'null'
+        email:
+          type:
+          - string
+          - 'null'
+        medico:
+          type: boolean
+        gestionale:
+          type: boolean
+        statoAccesso:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/PazienteDeskResponse.java. I valori di risposta
+        possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/PazienteDeskResponse.java
+    SegnalazioneIndisponibilitaResponse:
+      type: object
+      properties:
+        idPrenotazioni:
+          type:
+          - array
+          - 'null'
+          items:
+            type: integer
+            format: int32
+        indisponibilitaSegnalata:
+          type: boolean
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/SegnalazioneIndisponibilitaResponse.java. I valori
+        di risposta possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/SegnalazioneIndisponibilitaResponse.java
+    ConfermaPrenotazioneResponse:
+      type: object
+      properties:
+        idPrenotazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        stato:
+          anyOf:
+          - $ref: '#/components/schemas/StatoPrenotazione'
+          - type: 'null'
+        idOperatore:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        dataOraGestione:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        idMedicoEffettivo:
+          type:
+          - integer
+          - 'null'
+          format: int32
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/ConfermaPrenotazioneResponse.java. I valori di
+        risposta possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/ConfermaPrenotazioneResponse.java
+    RuoloUtenteRequest:
+      type: object
+      properties:
+        ruoloGestionale:
+          $ref: '#/components/schemas/RuoloGestionale'
+      additionalProperties: false
+      description: Corpo JSON; campi sconosciuti non ammessi.
+      required:
+      - ruoloGestionale
+      x-source: src/main/java/it/medbook/dto/RuoloUtenteRequest.java
+    PrenotazioneDeskResponse:
+      type: object
+      properties:
+        idPrenotazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        stato:
+          anyOf:
+          - $ref: '#/components/schemas/StatoPrenotazione'
+          - type: 'null'
+        indisponibilitaSegnalata:
+          type: boolean
+        prezzo:
+          type:
+          - number
+          - 'null'
+          description: Numero JSON decimale; importi in euro, precisione di due decimali nelle operazioni economiche.
+        idDisponibilita:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        dataOraInizio:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        dataOraFine:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        idPaziente:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomePaziente:
+          type:
+          - string
+          - 'null'
+        cognomePaziente:
+          type:
+          - string
+          - 'null'
+        idMedicoTitolare:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomeMedicoTitolare:
+          type:
+          - string
+          - 'null'
+        cognomeMedicoTitolare:
+          type:
+          - string
+          - 'null'
+        idMedicoEffettivo:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomeMedicoEffettivo:
+          type:
+          - string
+          - 'null'
+        cognomeMedicoEffettivo:
+          type:
+          - string
+          - 'null'
+        idPrestazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomePrestazione:
+          type:
+          - string
+          - 'null'
+        idStanza:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomeStanza:
+          type:
+          - string
+          - 'null'
+        gestitaDa:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        dataOraGestione:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        pagamenti:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeskPagamento'
+        rimborsi:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeskRimborso'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/PrenotazioneDeskResponse.java. I valori di risposta
+        possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/PrenotazioneDeskResponse.java
+    SegnalazionePendenteResponse:
+      type: object
+      properties:
+        idPrenotazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        idPaziente:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomePaziente:
+          type:
+          - string
+          - 'null'
+        cognomePaziente:
+          type:
+          - string
+          - 'null'
+        stato:
+          anyOf:
+          - $ref: '#/components/schemas/StatoPrenotazione'
+          - type: 'null'
+        idDisponibilita:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        dataOraInizio:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        dataOraFine:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        idMedicoTitolare:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomeMedicoTitolare:
+          type:
+          - string
+          - 'null'
+        cognomeMedicoTitolare:
+          type:
+          - string
+          - 'null'
+        idMedicoEffettivo:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomeMedicoEffettivo:
+          type:
+          - string
+          - 'null'
+        cognomeMedicoEffettivo:
+          type:
+          - string
+          - 'null'
+        idPrestazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomePrestazione:
+          type:
+          - string
+          - 'null'
+        idStanza:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomeStanza:
+          type:
+          - string
+          - 'null'
+        indisponibilitaSegnalata:
+          type: boolean
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/SegnalazionePendenteResponse.java. I valori di
+        risposta possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/SegnalazionePendenteResponse.java
+    CaricamentoRefertoResponse:
+      type: object
+      properties:
+        idReferto:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        idPrenotazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomeFile:
+          type:
+          - string
+          - 'null'
+        caricatoIl:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/CaricamentoRefertoResponse.java. I valori di risposta
+        possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/CaricamentoRefertoResponse.java
+    PagamentoResponse:
+      type: object
+      properties:
+        idPagamento:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        idPrenotazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        modalita:
+          anyOf:
+          - $ref: '#/components/schemas/ModalitaPagamento'
+          - type: 'null'
+        importo:
+          type:
+          - number
+          - 'null'
+          description: Numero JSON decimale; importi in euro, precisione di due decimali nelle operazioni economiche.
+        stato:
+          anyOf:
+          - $ref: '#/components/schemas/StatoPagamento'
+          - type: 'null'
+        idOperatore:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        creatoIl:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        pagatoIl:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/PagamentoResponse.java. I valori di risposta possono
+        essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/PagamentoResponse.java
+    PagamentoPubblicoResponse:
+      type: object
+      properties:
+        idPagamento:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        idPrenotazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        modalita:
+          anyOf:
+          - $ref: '#/components/schemas/ModalitaPagamento'
+          - type: 'null'
+        importo:
+          type:
+          - number
+          - 'null'
+          description: Numero JSON decimale; importi in euro, precisione di due decimali nelle operazioni economiche.
+        stato:
+          anyOf:
+          - $ref: '#/components/schemas/StatoPagamento'
+          - type: 'null'
+        creatoIl:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        pagatoIl:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/PagamentoPubblicoResponse.java. I valori di risposta
+        possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/PagamentoPubblicoResponse.java
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+          format: password
+          writeOnly: true
+      additionalProperties: false
+      required:
+      - email
+      - password
+      example:
+        email: paziente@example.invalid
+        password: EsempioSoloDocumentazione2030!
+      description: 'Credenziali fittizie nell’esempio: non corrispondono ad account della demo. Corpo JSON di massimo
+        8192 byte.'
+    AnnullamentoPrenotazioneResponse:
+      type: object
+      properties:
+        idPrenotazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        stato:
+          anyOf:
+          - $ref: '#/components/schemas/StatoPrenotazione'
+          - type: 'null'
+        idOperatore:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        dataOraGestione:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/AnnullamentoPrenotazioneResponse.java. I valori
+        di risposta possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/AnnullamentoPrenotazioneResponse.java
+    RichiestaPrenotazioneResponse:
+      type: object
+      properties:
+        indisponibilitaSegnalata:
+          type: boolean
+        idPrenotazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        stato:
+          anyOf:
+          - $ref: '#/components/schemas/StatoPrenotazione'
+          - type: 'null'
+        dataOraRichiesta:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        dataOraInizio:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        dataOraFine:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        prezzo:
+          type:
+          - number
+          - 'null'
+          description: Numero JSON decimale; importi in euro, precisione di due decimali nelle operazioni economiche.
+        idPaziente:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomePaziente:
+          type:
+          - string
+          - 'null'
+        cognomePaziente:
+          type:
+          - string
+          - 'null'
+        idMedico:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomeMedico:
+          type:
+          - string
+          - 'null'
+        cognomeMedico:
+          type:
+          - string
+          - 'null'
+        idPrestazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomePrestazione:
+          type:
+          - string
+          - 'null'
+        durataPrestazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        idStanza:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomeStanza:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/RichiestaPrenotazioneResponse.java. I valori di
+        risposta possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/RichiestaPrenotazioneResponse.java
+    RegistrazioneVisitaResponse:
+      type: object
+      properties:
+        idPrenotazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        stato:
+          anyOf:
+          - $ref: '#/components/schemas/StatoPrenotazione'
+          - type: 'null'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/RegistrazioneVisitaResponse.java. I valori di
+        risposta possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/RegistrazioneVisitaResponse.java
+    VerificaMancataErogazioneResponse:
+      type: object
+      properties:
+        idPrenotazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        stato:
+          anyOf:
+          - $ref: '#/components/schemas/StatoPrenotazione'
+          - type: 'null'
+        idOperatore:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        dataOraGestione:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/VerificaMancataErogazioneResponse.java. I valori
+        di risposta possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/VerificaMancataErogazioneResponse.java
+    CambioPasswordRequest:
+      type: object
+      properties:
+        passwordAttuale:
+          type: string
+          format: password
+          writeOnly: true
+        nuovaPassword:
+          type: string
+          format: password
+          writeOnly: true
+          description: 'Password senza trim: 12–1024 unità UTF-16 per medico/gestionale; 8–1024 per paziente. ResetPasswordRequest
+            è condiviso: vale la categoria della rotta. Unicode scalare valido.'
+      additionalProperties: false
+      required:
+      - passwordAttuale
+      - nuovaPassword
+    RifiutoPrenotazioneRequest:
+      type: object
+      properties:
+        idOperatore:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Se identifica l’attore, deve coincidere con idUtente della sessione.
+      additionalProperties: false
+      description: Corpo JSON; campi sconosciuti non ammessi.
+      required:
+      - idOperatore
+      x-source: src/main/java/it/medbook/dto/RifiutoPrenotazioneRequest.java
+    MedicoResponse:
+      type: object
+      properties:
+        idUtente:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nome:
+          type:
+          - string
+          - 'null'
+        cognome:
+          type:
+          - string
+          - 'null'
+        email:
+          type:
+          - string
+          - 'null'
+        specializzazione:
+          type:
+          - string
+          - 'null'
+        numeroIscrizioneOrdine:
+          type:
+          - string
+          - 'null'
+        stato:
+          type:
+          - string
+          - 'null'
+        paziente:
+          type: boolean
+        ruoloGestionale:
+          anyOf:
+          - $ref: '#/components/schemas/RuoloGestionale'
+          - type: 'null'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/MedicoResponse.java. I valori di risposta possono
+        essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/MedicoResponse.java
+    UtenteAutenticatoResponse:
+      type: object
+      properties:
+        idUtente:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nome:
+          type:
+          - string
+          - 'null'
+        cognome:
+          type:
+          - string
+          - 'null'
+        paziente:
+          type: boolean
+        medico:
+          type: boolean
+        ruoloGestionale:
+          anyOf:
+          - $ref: '#/components/schemas/RuoloGestionale'
+          - type: 'null'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/UtenteAutenticatoResponse.java. I valori di risposta
+        possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/UtenteAutenticatoResponse.java
+    SostituzioneMedicoResponse:
+      type: object
+      properties:
+        idPrenotazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        stato:
+          anyOf:
+          - $ref: '#/components/schemas/StatoPrenotazione'
+          - type: 'null'
+        idMedicoEffettivo:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        indisponibilitaSegnalata:
+          type: boolean
+        idOperatore:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        dataOraGestione:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/SostituzioneMedicoResponse.java. I valori di risposta
+        possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/SostituzioneMedicoResponse.java
+    AccountInternoResponse:
+      type: object
+      properties:
+        idUtente:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nome:
+          type:
+          - string
+          - 'null'
+        cognome:
+          type:
+          - string
+          - 'null'
+        email:
+          type:
+          - string
+          - 'null'
+        ruoloGestionale:
+          anyOf:
+          - $ref: '#/components/schemas/RuoloGestionale'
+          - type: 'null'
+        paziente:
+          type: boolean
+        medico:
+          type: boolean
+        statoAccesso:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/AccountInternoResponse.java. I valori di risposta
+        possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/AccountInternoResponse.java
+    NuovoMedicoRequest:
+      type: object
+      properties:
+        nome:
+          type: string
+        cognome:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+          format: password
+          writeOnly: true
+          description: 'Password senza trim: 12–1024 unità UTF-16 per medico/gestionale; 8–1024 per paziente. ResetPasswordRequest
+            è condiviso: vale la categoria della rotta. Unicode scalare valido.'
+        specializzazione:
+          type: string
+        numeroIscrizioneOrdine:
+          type: string
+      additionalProperties: false
+      description: Corpo JSON; campi sconosciuti non ammessi.
+      required:
+      - nome
+      - cognome
+      - email
+      - password
+      - specializzazione
+      - numeroIscrizioneOrdine
+      x-source: src/main/java/it/medbook/dto/NuovoMedicoRequest.java
+    AnnullamentoPrenotazioneRequest:
+      type: object
+      properties:
+        idOperatore:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Se identifica l’attore, deve coincidere con idUtente della sessione.
+        statoAtteso:
+          type: string
+          enum:
+          - RICHIESTA
+          - CONFERMATA
+      additionalProperties: false
+      description: Corpo JSON; campi sconosciuti non ammessi.
+      required:
+      - idOperatore
+      - statoAtteso
+      x-source: src/main/java/it/medbook/dto/AnnullamentoPrenotazioneRequest.java
+    DettaglioMedicoDeskResponse:
+      type: object
+      properties:
+        medico:
+          anyOf:
+          - $ref: '#/components/schemas/MedicoDeskResponse'
+          - type: 'null'
+        prestazioniAutorizzate:
+          type:
+          - array
+          - 'null'
+          items:
+            $ref: '#/components/schemas/PrestazioneResponse'
+        paziente:
+          type: boolean
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/DettaglioMedicoDeskResponse.java. I valori di
+        risposta possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/DettaglioMedicoDeskResponse.java
+    SegnalaIndisponibilitaRequest:
+      type: object
+      properties:
+        medicoId:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Se identifica l’attore, deve coincidere con idUtente della sessione.
+        idPrenotazioni:
+          type: array
+          items:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 2147483647
+            description: Identificativo positivo.
+          minItems: 1
+          uniqueItems: true
+      additionalProperties: false
+      description: Corpo JSON; campi sconosciuti non ammessi.
+      required:
+      - medicoId
+      - idPrenotazioni
+      x-source: src/main/java/it/medbook/dto/SegnalaIndisponibilitaRequest.java
+    AnnullamentoPazienteResponse:
+      type: object
+      properties:
+        idPrenotazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        stato:
+          anyOf:
+          - $ref: '#/components/schemas/StatoPrenotazione'
+          - type: 'null'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/AnnullamentoPazienteResponse.java. I valori di
+        risposta possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/AnnullamentoPazienteResponse.java
+    ConfiguraDisponibilitaRequest:
+      type: object
+      properties:
+        idPrestazione:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+        idStanza:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+      additionalProperties: false
+      description: Corpo JSON; campi sconosciuti non ammessi.
+      required:
+      - idPrestazione
+      - idStanza
+      x-source: src/main/java/it/medbook/dto/ConfiguraDisponibilitaRequest.java
+      example:
+        idPrestazione: 3
+        idStanza: 2
+    CollegamentoMedicoRequest:
+      type: object
+      properties:
+        specializzazione:
+          type: string
+        numeroIscrizioneOrdine:
+          type: string
+      additionalProperties: false
+      description: Corpo JSON; campi sconosciuti non ammessi.
+      required:
+      - specializzazione
+      - numeroIscrizioneOrdine
+      x-source: src/main/java/it/medbook/dto/CollegamentoMedicoRequest.java
+    RifiutoPrenotazioneResponse:
+      type: object
+      properties:
+        idPrenotazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        stato:
+          anyOf:
+          - $ref: '#/components/schemas/StatoPrenotazione'
+          - type: 'null'
+        idOperatore:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        dataOraGestione:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/RifiutoPrenotazioneResponse.java. I valori di
+        risposta possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/RifiutoPrenotazioneResponse.java
+    AppuntamentoPazienteResponse:
+      type: object
+      properties:
+        idPrenotazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        stato:
+          anyOf:
+          - $ref: '#/components/schemas/StatoPrenotazione'
+          - type: 'null'
+        dataOraRichiesta:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        prezzo:
+          type:
+          - number
+          - 'null'
+          description: Numero JSON decimale; importi in euro, precisione di due decimali nelle operazioni economiche.
+        idDisponibilita:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        dataOraInizio:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        dataOraFine:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        idPrestazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomePrestazione:
+          type:
+          - string
+          - 'null'
+        durataPrestazione:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        idMedicoTitolare:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomeMedicoTitolare:
+          type:
+          - string
+          - 'null'
+        cognomeMedicoTitolare:
+          type:
+          - string
+          - 'null'
+        idMedicoEffettivo:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomeMedicoEffettivo:
+          type:
+          - string
+          - 'null'
+        cognomeMedicoEffettivo:
+          type:
+          - string
+          - 'null'
+        idStanza:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        nomeStanza:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/AppuntamentoPazienteResponse.java. I valori di
+        risposta possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/AppuntamentoPazienteResponse.java
+    CreaDisponibilitaRequest:
+      type: object
+      properties:
+        idMedico:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Se identifica l’attore, deve coincidere con idUtente della sessione.
+        dataOraInizio:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        dataOraFine:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+      additionalProperties: false
+      description: Corpo JSON; campi sconosciuti non ammessi.
+      required:
+      - idMedico
+      - dataOraInizio
+      - dataOraFine
+      x-source: src/main/java/it/medbook/dto/CreaDisponibilitaRequest.java
+      example:
+        idMedico: 12
+        dataOraInizio: '2030-11-05T09:00:00'
+        dataOraFine: '2030-11-05T12:00:00'
+    ElencoPazientiDeskResponse:
+      type: object
+      properties:
+        risultati:
+          type:
+          - array
+          - 'null'
+          items:
+            $ref: '#/components/schemas/PazienteDeskResponse'
+        prossimoDopoId:
+          type:
+          - integer
+          - 'null'
+          format: int32
+      additionalProperties: false
+      description: Struttura JSON da src/main/java/it/medbook/dto/ElencoPazientiDeskResponse.java. I valori di risposta
+        possono essere null secondo stato e proiezione.
+      x-source: src/main/java/it/medbook/dto/ElencoPazientiDeskResponse.java
+    AnnullamentoPazienteRequest:
+      type: object
+      properties:
+        idPaziente:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Se identifica l’attore, deve coincidere con idUtente della sessione.
+        statoAtteso:
+          type: string
+          enum:
+          - RICHIESTA
+          - CONFERMATA
+      additionalProperties: false
+      description: Corpo JSON; campi sconosciuti non ammessi.
+      required:
+      - idPaziente
+      - statoAtteso
+      x-source: src/main/java/it/medbook/dto/AnnullamentoPazienteRequest.java
+    DeskPagamento:
+      type: object
+      properties:
+        idPagamento:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        modalita:
+          anyOf:
+          - $ref: '#/components/schemas/ModalitaPagamento'
+          - type: 'null'
+        importo:
+          type:
+          - number
+          - 'null'
+          description: Numero JSON decimale; importi in euro, precisione di due decimali nelle operazioni economiche.
+        stato:
+          anyOf:
+          - $ref: '#/components/schemas/StatoPagamento'
+          - type: 'null'
+        creatoIl:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        pagatoIl:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        registratoDa:
+          type:
+          - integer
+          - 'null'
+          format: int32
+      additionalProperties: false
+    DeskRimborso:
+      type: object
+      properties:
+        idRimborso:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        idPagamento:
+          type:
+          - integer
+          - 'null'
+          format: int32
+        stato:
+          anyOf:
+          - $ref: '#/components/schemas/StatoRimborso'
+          - type: 'null'
+        importo:
+          type:
+          - number
+          - 'null'
+          description: Numero JSON decimale; importi in euro, precisione di due decimali nelle operazioni economiche.
+        richiestoIl:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        verificatoIl:
+          type:
+          - string
+          - 'null'
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$
+          description: Data e ora locale Java LocalDateTime, senza offset o fuso. Non è un timestamp RFC 3339 con
+            offset.
+          example: '2030-11-05T09:00:00'
+        verificatoDa:
+          type:
+          - integer
+          - 'null'
+          format: int32
+      additionalProperties: false
+    PagamentoOnlineRequest:
+      type: object
+      properties:
+        importoAtteso:
+          type: number
+      additionalProperties: false
+      required:
+      - importoAtteso
+      example:
+        importoAtteso: 80
+    StatoMedicoRequest:
+      type: object
+      properties:
+        stato:
+          type: string
+          enum:
+          - ATTIVO
+          - INATTIVO
+      additionalProperties: false
+      required:
+      - stato
+    StatoAccessoRequest:
+      type: object
+      properties:
+        statoAccesso:
+          type: string
+          enum:
+          - ATTIVO
+          - DISABILITATO
+      additionalProperties: false
+      required:
+      - statoAccesso
+    ResetPasswordRequest:
+      type: object
+      properties:
+        nuovaPassword:
+          type: string
+          format: password
+          writeOnly: true
+          description: 'Password senza trim: 12–1024 unità UTF-16 per medico/gestionale; 8–1024 per paziente. ResetPasswordRequest
+            è condiviso: vale la categoria della rotta. Unicode scalare valido.'
+      additionalProperties: false
+      required:
+      - nuovaPassword
+    AbilitazioneRequest:
+      type: object
+      properties:
+        operazione:
+          type: string
+          enum:
+          - ASSEGNA
+          - RIMUOVI
+        idPrestazione:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+          description: Identificativo positivo.
+      additionalProperties: false
+      required:
+      - operazione
+      - idPrestazione
+    CollegamentoPazienteRequest:
+      type: object
+      properties:
+        codiceFiscale:
+          type: string
+        dataNascita:
+          type: string
+          format: date
+        telefono:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
+      required:
+      - codiceFiscale
+      - dataNascita
+    ModificaMedicoPersonali:
+      type: object
+      properties:
+        tipo:
+          type: string
+          enum:
+          - PERSONALI
+        nome:
+          type: string
+        cognome:
+          type: string
+        email:
+          type: string
+      additionalProperties: false
+      required:
+      - tipo
+      - nome
+      - cognome
+      - email
+    ModificaMedicoProfessionali:
+      type: object
+      properties:
+        tipo:
+          type: string
+          enum:
+          - PROFESSIONALI
+        specializzazione:
+          type: string
+        numeroIscrizioneOrdine:
+          type: string
+      additionalProperties: false
+      required:
+      - tipo
+      - specializzazione
+      - numeroIscrizioneOrdine
+    ModificaMedicoRequest:
+      oneOf:
+      - $ref: '#/components/schemas/ModificaMedicoPersonali'
+      - $ref: '#/components/schemas/ModificaMedicoProfessionali'
+    EmptyObject:
+      type: object
+      properties: {}
+      additionalProperties: false
+      required: []
+      example: {}
+    Message:
+      type: object
+      properties:
+        message:
+          type: string
+      additionalProperties: false
+      required:
+      - message
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      additionalProperties: false
+      required:
+      - error
+      example:
+        error: Richiesta non valida.
+    CambioPasswordResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        nuovoAccessoRichiesto:
+          type: boolean
+      additionalProperties: false
+      required:
+      - message
+      - nuovoAccessoRichiesto
+  parameters:
+    Origin:
+      name: Origin
+      in: header
+      required: true
+      description: Origine esatta configurata in MEDBOOK_AUTH_ORIGIN, senza slash finale. Il browser la imposta
+        automaticamente.
+      schema:
+        type: string
+      example: http://localhost:8088
+    Csrf:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      description: Token ottenuto dagli header di login o GET /api/auth/me. Non è il cookie.
+      schema:
+        type: string
+  responses:
+    E400:
+      description: Richiesta, parametri o documento non validi.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    E401:
+      description: Sessione assente/scaduta/revocata o credenziali non valide.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    E403:
+      description: Permesso, identità dichiarata, Origin o CSRF non validi.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    E404:
+      description: Risorsa non trovata o non appartenente al chiamante; percorso sconosciuto.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    E405:
+      description: Metodo non consentito; header Allow con i metodi previsti.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+      headers:
+        Allow:
+          schema:
+            type: string
+    E409:
+      description: Conflitto di stato, duplicato o vincolo di dominio.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    E413:
+      description: Corpo troppo grande.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    E415:
+      description: Content-Type non supportato.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    E429:
+      description: 'Troppi tentativi; Retry-After: 300.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+      headers:
+        Retry-After:
+          schema:
+            type: string
+          description: 'Secondi: 300 per throttling, 60 per capacità sessioni, 5 per contesa account.'
+    E500:
+      description: Errore interno; esito di una modifica potenzialmente incerto, da verificare prima di ripetere.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    E503:
+      description: Servizio temporaneamente non disponibile; Retry-After secondo operazione.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+      headers:
+        Retry-After:
+          schema:
+            type: string
+          description: 'Secondi: 300 per throttling, 60 per capacità sessioni, 5 per contesa account.'
