@@ -128,6 +128,27 @@ Rimuove solo container, reti e volumi di questo progetto (database e referti ins
 immagini, `.env` e `.medbook-demo/`, né risorse di altri progetti. Non esiste una procedura di
 backup e ripristino: per conservare una demo, database e volume dei referti vanno salvati insieme.
 
+### Più copie sullo stesso computer
+
+Container, reti, volumi e immagini prendono il nome dal progetto Compose, `medbook-demo` per
+default. Una porta diversa, da sola, non separa container, volumi e immagini: due copie con lo
+stesso nome di progetto condividono container, database e referti. Per una seconda copia, in
+un'altra directory, scegliere un nome che inizi con `medbook-demo` (richiesto dallo script di
+reset) e una porta libera:
+
+```sh
+export COMPOSE_PROJECT_NAME=medbook-demo-copia2
+scripts/demo/configura.sh --porta 8090
+docker compose up -d --build --wait
+docker compose run --rm dati
+```
+
+Lo stesso nome vale per ogni comando successivo nello stesso terminale (`stop`, `start`, `down`,
+`logs`); in un nuovo terminale va esportato di nuovo, altrimenti Compose torna a `medbook-demo`.
+Il reset della copia indica quel nome: `scripts/demo/reset.sh --progetto medbook-demo-copia2`.
+Le immagini risultano `medbook-demo-copia2-backend:1.0.0` e analoghe, distinte da quelle delle
+altre copie.
+
 ### Problemi comuni
 
 - **Porta occupata**: scegliere un'altra porta modificando `MEDBOOK_WEB_PORT` in `.env`, poi

@@ -1,6 +1,7 @@
 # Demo locale di MedBook: MySQL, backend Java e server web con una sola origine.
 # Solo il servizio web è pubblicato, sul loopback; database e backend restano sulle reti interne.
 # Configurazione e segreti: scripts/demo/configura.sh genera .env e .medbook-demo/ (esclusi da Git).
+# Le immagini prendono il nome dal progetto Compose: copie con progetti diversi non condividono tag.
 name: medbook-demo
 
 x-sicurezza: &sicurezza
@@ -18,7 +19,7 @@ services:
     build:
       context: .
       target: mysql
-    image: medbook-demo/mysql:1.0.0
+    image: ${COMPOSE_PROJECT_NAME}-mysql:1.0.0
     user: "999:999"
     environment:
       MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql_root
@@ -42,7 +43,7 @@ services:
     build:
       context: .
       target: backend
-    image: medbook-demo/backend:1.0.0
+    image: ${COMPOSE_PROJECT_NAME}-backend:1.0.0
     environment:
       <<: *database
       MEDBOOK_DB_USERNAME: medbook_app
@@ -67,7 +68,7 @@ services:
     build:
       context: .
       target: web
-    image: medbook-demo/web:1.0.0
+    image: ${COMPOSE_PROJECT_NAME}-web:1.0.0
     ports:
       - "127.0.0.1:${MEDBOOK_WEB_PORT:-8088}:8080"
     networks: [web]
@@ -80,7 +81,7 @@ services:
 
   # Caricamento esplicito dei dati fittizi: docker compose run --rm dati
   dati:
-    image: medbook-demo/backend:1.0.0
+    image: ${COMPOSE_PROJECT_NAME}-backend:1.0.0
     profiles: [dati]
     command: ["dati"]
     environment:
