@@ -1,0 +1,12 @@
+# Dipendenze e build (package-lock.json resta versionato)
+node_modules/
+dist/
+coverage/
+
+# Configurazione e file locali
+.env
+.env.*
+*.local
+*.log
+.vite/
+.DS_Store
