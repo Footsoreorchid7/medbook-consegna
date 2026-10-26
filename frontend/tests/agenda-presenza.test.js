@@ -7,7 +7,7 @@ import { createSession } from '../src/session/session.js'
 import { SESSION_KEY } from '../src/session/useSession.js'
 import { medicoStore } from '../src/medico/store.js'
 import { installFetch, routedFetch, meOk, jsonResponse } from './helpers.js'
-import { MEDICO, REFERTO, effettuata, medico, pdf } from './b5-fixtures.js'
+import { MEDICO, REFERTO, effettuata, medico, pdf } from './agenda-medico-fixtures.js'
 let net,session,wrapper
 const a=(refertoPresente)=>parseAppuntamentoAgenda(effettuata(12,{refertoPresente}),MEDICO)
 beforeEach(async()=>{

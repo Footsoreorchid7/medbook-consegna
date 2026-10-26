@@ -12,7 +12,7 @@ import { SESSION_KEY } from '../src/session/useSession.js'
 import { medicoStore } from '../src/medico/store.js'
 import { createAppRouter } from '../src/router/index.js'
 import { CSRF_B, installFetch, routedFetch, meOk, jsonResponse } from './helpers.js'
-import { MEDICO, REFERTO, effettuata, medico, pdf, caricato, agendaPeriodo } from './b5-fixtures.js'
+import { MEDICO, REFERTO, effettuata, medico, pdf, caricato, agendaPeriodo } from './agenda-medico-fixtures.js'
 let net, wrapper, session
 beforeEach(async () => {
  net=installFetch(routedFetch()); net.on('GET /api/auth/me',meOk(medico()))

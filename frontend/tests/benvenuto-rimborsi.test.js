@@ -9,9 +9,9 @@ import { SESSION_KEY } from '../src/session/useSession.js'
 import { CARD_DESK } from '../src/desk/useDashboardDesk.js'
 import { GRUPPI } from '../src/navigation/collegamenti.js'
 import { ETICHETTE_RIMBORSO, NOTE_RIMBORSO } from '../src/prenotazioni/economia.js'
-import { appuntamento } from './b3-fixtures.js'
-import { rimborso } from './b4-fixtures.js'
-import { desk, admin } from './b7-fixtures.js'
+import { appuntamento } from './prenotazioni-paziente-fixtures.js'
+import { rimborso } from './pagamenti-rimborsi-fixtures.js'
+import { desk, admin } from './desk-fixtures.js'
 import { installFetch, jsonResponse, meOk, routedFetch, utente } from './helpers.js'
 let net, wrapper
 beforeEach(() => { net = installFetch(routedFetch()) })

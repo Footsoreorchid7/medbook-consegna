@@ -86,7 +86,7 @@ describe('home del centro dimostrativo', () => {
     expect(home().find('a[href="/accesso"]').exists()).toBe(false)
     expect(home().get('a[href="/area"]').text()).toBe("Vai all'area riservata")
   })
-  it('bootstrap fallito: recupero B1 unico, indipendente dal catalogo', async () => {
+  it('bootstrap fallito: recupero della sessione unico, indipendente dal catalogo', async () => {
     net.on(CAT, jsonResponse(200, [voce(1)])); await apri(jsonResponse(500, { error: 'x' }))
     expect(home().findAll('[role="alert"]')).toHaveLength(1)
     expect(cards()).toHaveLength(1)

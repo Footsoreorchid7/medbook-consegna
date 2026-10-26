@@ -7,7 +7,7 @@ import { isReserved } from '../src/router/guards.js'
 import { createAppRouter } from '../src/router/index.js'
 import { STATO, capabilitiesOf, createSession } from '../src/session/session.js'
 import { SESSION_KEY } from '../src/session/useSession.js'
-import { admin, desk } from './b7-fixtures.js'
+import { admin, desk } from './desk-fixtures.js'
 import { CSRF_A, CSRF_B, installFetch, jsonResponse, meOk, routedFetch, unauthorized, utente } from './helpers.js'
 
 /** Struttura comune: intestazione, menu del profilo, navigazione laterale e pagina di accesso. */

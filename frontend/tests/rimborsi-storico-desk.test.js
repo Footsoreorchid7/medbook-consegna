@@ -7,7 +7,7 @@ import { createSession } from '../src/session/session.js'
 import { SESSION_KEY } from '../src/session/useSession.js'
 import { deskStore } from '../src/desk/store.js'
 import { parseStoricoRimborsoDesk, parseRimborsoDesk, fetchStoricoRimborsiDesk } from '../src/api/desk.js'
-import { desk, rimborsoDesk, decisione, RIMBORSI, DECIDI } from './b7-fixtures.js'
+import { desk, rimborsoDesk, decisione, RIMBORSI, DECIDI } from './desk-fixtures.js'
 import { installFetch, jsonResponse, meOk, routedFetch } from './helpers.js'
 
 let net, wrapper

@@ -7,7 +7,7 @@ import { createSession, STATO } from '../src/session/session.js'
 import { SESSION_KEY } from '../src/session/useSession.js'
 import { prenotazioniStore } from '../src/prenotazioni/store.js'
 import { parseAppuntamento } from '../src/api/prenotazioni.js'
-import { confermata, pagamento, fallito } from './b4-fixtures.js'
+import { confermata, pagamento, fallito } from './pagamenti-rimborsi-fixtures.js'
 import { CSRF_B, installFetch, jsonResponse, meOk, routedFetch, utente } from './helpers.js'
 
 const ME = 'GET /api/auth/me'

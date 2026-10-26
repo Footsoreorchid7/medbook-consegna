@@ -8,8 +8,8 @@ import { SESSION_KEY } from '../src/session/useSession.js'
 import { deskStore } from '../src/desk/store.js'
 import { parseRichiesta } from '../src/api/desk.js'
 import { CARD_DESK } from '../src/desk/useDashboardDesk.js'
-import { desk, admin, medicoDesk, richiesta, segnalazione, rimborsoDesk, gestione, OP, RICHIESTE, SEGNALAZIONI, RIMBORSI, MEDICI } from './b7-fixtures.js'
-import { slot, configurato } from './b6-fixtures.js'
+import { desk, admin, medicoDesk, richiesta, segnalazione, rimborsoDesk, gestione, OP, RICHIESTE, SEGNALAZIONI, RIMBORSI, MEDICI } from './desk-fixtures.js'
+import { slot, configurato } from './disponibilita-medico-fixtures.js'
 import { CSRF_B, installFetch, routedFetch, jsonResponse, meOk, utente } from './helpers.js'
 let wrapper, net, visibilita, descrittore
 const DISP = id => `GET /api/disponibilita?medicoId=${id}`

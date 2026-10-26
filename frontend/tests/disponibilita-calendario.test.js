@@ -6,7 +6,7 @@ import CalendarioAgenda from '../src/components/CalendarioAgenda.vue'
 import { createSession } from '../src/session/session.js'
 import { SESSION_KEY } from '../src/session/useSession.js'
 import { createAppRouter } from '../src/router/index.js'
-import { ELENCO, ELIMINA, configurato, medico, slot, vuota } from './b6-fixtures.js'
+import { ELENCO, ELIMINA, configurato, medico, slot, vuota } from './disponibilita-medico-fixtures.js'
 import { CSRF_B, installFetch, routedFetch, jsonResponse, meOk } from './helpers.js'
 let wrapper, net
 beforeEach(() => {

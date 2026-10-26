@@ -9,8 +9,8 @@ import { deskStore, chiavePrenotazione } from '../src/desk/store.js'
 import { parseRichiesta, parseRichiestaConsultazione, richiestePath, fetchRichiesteConsultazione } from '../src/api/desk.js'
 import { STATI_PRENOTAZIONI_UI, stileStatoAgenda } from '../src/medico/statiAgenda.js'
 import { ProtocolError } from '../src/api/http.js'
-import { appuntamento } from './b3-fixtures.js'
-import { desk, admin, richiesta, gestione, RICHIESTE, OP, MEDICI, PRESTAZIONI } from './b7-fixtures.js'
+import { appuntamento } from './prenotazioni-paziente-fixtures.js'
+import { desk, admin, richiesta, gestione, RICHIESTE, OP, MEDICI, PRESTAZIONI } from './desk-fixtures.js'
 import { installFetch, routedFetch, jsonResponse, meOk, utente } from './helpers.js'
 let wrapper,net
 beforeEach(()=>{net=installFetch(routedFetch())})

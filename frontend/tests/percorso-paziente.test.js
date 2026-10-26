@@ -7,7 +7,7 @@ import { createSession } from '../src/session/session.js'
 import { SESSION_KEY } from '../src/session/useSession.js'
 import { sceltaStore } from '../src/prenotazioni/scelta.js'
 import { prenotazioniStore } from '../src/prenotazioni/store.js'
-import { appuntamento } from './b3-fixtures.js'
+import { appuntamento } from './prenotazioni-paziente-fixtures.js'
 import { CSRF_B, installFetch, jsonResponse, meOk, routedFetch, unauthorized, utente } from './helpers.js'
 const CAT='GET /api/prestazioni', ME='GET /api/auth/me', POST='POST /api/prenotazioni'
 const LIST='GET /api/prenotazioni/paziente?idPaziente=7'
@@ -224,7 +224,7 @@ describe('catalogo → disponibilità → accesso → richiesta',()=>{
   expect(net.callsTo(POST)).toHaveLength(0)
  })
 
- it('login incerto: scelta minima conservata e recupero manuale B1, mai POST automatiche',async()=>{
+ it('login incerto: scelta minima conservata e recupero manuale della sessione, mai POST automatiche',async()=>{
   net.on(CAT,jsonResponse(200,catalogo)).on(DISP,jsonResponse(200,[slot()]))
   const {session,router,choice}=await open();await search()
   net.on('POST /api/auth/login','rete');await session.login('paziente@example.test','fittizia')

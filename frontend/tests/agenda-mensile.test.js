@@ -8,7 +8,7 @@ import { createSession } from '../src/session/session.js'
 import { SESSION_KEY } from '../src/session/useSession.js'
 import { createAppRouter } from '../src/router/index.js'
 import { installFetch, routedFetch, jsonResponse, meOk } from './helpers.js'
-import { AGENDA, SEGNALA, agendaPeriodo, medico, voce } from './b5-fixtures.js'
+import { AGENDA, SEGNALA, agendaPeriodo, medico, voce } from './agenda-medico-fixtures.js'
 let wrapper, net
 beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(2026, 9, 23, 12)); net = installFetch(routedFetch()) })
 afterEach(() => { wrapper?.unmount(); vi.useRealTimers() })

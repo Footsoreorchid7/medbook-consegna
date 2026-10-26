@@ -54,6 +54,26 @@ describe('request: corpi di risposta', () => {
     expect(result.data).toBeUndefined()
   })
 
+  it('204 e 205: il corpo viene consumato e il risultato resta senza contenuto', async () => {
+    for (const status of [204, 205]) {
+      // Corpo in streaming: al ritorno della richiesta la lettura deve essere già avviata.
+      const risposta = new Response('ignorato', { status: 200 })
+      Object.defineProperty(risposta, 'status', { value: status })
+      script.reply(risposta)
+      const result = await request({ method: 'DELETE', path: '/api/prova/1' })
+      expect(risposta.bodyUsed).toBe(true)
+      expect(result).toMatchObject({ status, hasBody: false, data: undefined })
+    }
+  })
+
+  it('204: un errore nella lettura del corpo vuoto non cambia l\'esito', async () => {
+    const risposta = new Response(new ReadableStream({ start(c) { c.error(new TypeError('connessione chiusa')) } }), { status: 200 })
+    Object.defineProperty(risposta, 'status', { value: 204 })
+    script.reply(risposta)
+    const result = await request({ method: 'DELETE', path: '/api/prova/1' })
+    expect(result).toMatchObject({ status: 204, hasBody: false, data: undefined })
+  })
+
   it('200 con corpo vuoto distinto da {}', async () => {
     script.reply(new Response('', { status: 200 }))
     script.reply(jsonResponse(200, {}))

@@ -8,8 +8,8 @@ import { SESSION_KEY } from '../src/session/useSession.js'
 import { deskStore } from '../src/desk/store.js'
 import { parseDisponibilita } from '../src/api/disponibilitaMedico.js'
 import { parseMedicoDesk } from '../src/api/desk.js'
-import { slot, configurato } from './b6-fixtures.js'
-import { desk, medicoDesk, dettaglio, stanzaDesk, prestazione, MEDICI, MEDICO, STANZE, DISPONIBILITA, CONFIGURA } from './b7-fixtures.js'
+import { slot, configurato } from './disponibilita-medico-fixtures.js'
+import { desk, medicoDesk, dettaglio, stanzaDesk, prestazione, MEDICI, MEDICO, STANZE, DISPONIBILITA, CONFIGURA } from './desk-fixtures.js'
 import { installFetch, routedFetch, jsonResponse, meOk } from './helpers.js'
 let net, wrapper
 beforeEach(() => { net = installFetch(routedFetch()) })

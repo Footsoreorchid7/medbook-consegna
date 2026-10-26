@@ -224,7 +224,14 @@ export async function request({
       result.hasBody = true
       result.data = blob
     } else {
-      const text = response.status === 204 || response.status === 205 ? '' : await response.text()
+      let text = ''
+      if (response.status === 204 || response.status === 205) {
+        // Corpo vuoto consumato comunque: se resta aperto, il browser registra la richiesta come
+        // interrotta. Lettura non attesa: esito e tempi della richiesta non dipendono dal corpo.
+        response.text().catch(() => {})
+      } else {
+        text = await response.text()
+      }
       if (text.length > 0) {
         if (!isJson(response.headers.get('Content-Type'))) throw new ProtocolError('Content-Type inatteso')
         try {

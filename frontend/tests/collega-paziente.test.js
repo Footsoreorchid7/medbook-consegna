@@ -9,7 +9,7 @@ import { adminStore } from '../src/admin/store.js'
 import { fetchMedicoDesk } from '../src/api/desk.js'
 import { postCollegamentoPaziente } from '../src/api/pazientiDesk.js'
 import { ProtocolError } from '../src/api/http.js'
-import { dettaglio, desk, admin, medicoDesk, prestazione } from './b7-fixtures.js'
+import { dettaglio, desk, admin, medicoDesk, prestazione } from './desk-fixtures.js'
 import { installFetch, routedFetch, meOk, jsonResponse, utente, CSRF_B } from './helpers.js'
 const GET = 'GET /api/medici/5', POST = 'POST /api/pazienti/5/collegamento'
 const dati = { codiceFiscale: 'tsttst90a01a000q', dataNascita: '1990-01-01', telefono: '' }
