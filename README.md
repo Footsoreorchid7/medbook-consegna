@@ -16,10 +16,132 @@ del denaro. Nessuna transazione bancaria reale viene effettuata.
 - `frontend`: applicazione Vue e test.
 - `database`: schema corrente e migrazioni incrementali.
 - `scripts/e2e`: preparazione e rimozione controllata di un MySQL temporaneo per gli E2E.
+- `Dockerfile`, `compose.yaml`, `docker/`, `scripts/demo`: demo locale con Docker e dati fittizi.
 
-Non sono inclusi ambienti Docker dell'applicazione né dati dimostrativi precaricati.
+## Demo locale con Docker
 
-## Prerequisiti
+Ambiente dimostrativo da usare solo sul proprio computer: dati interamente fittizi, pagamenti
+simulati, nessuna transazione reale. Usa HTTP sul loopback con `MEDBOOK_AUTH_MODE=local-http` e
+**non è una configurazione adatta alla pubblicazione online** (servirebbero HTTPS, un reverse proxy
+fidato e una revisione della sicurezza operativa).
+
+Servizi: MySQL 8.4.13, backend Java 21 (Temurin 21.0.12.1) con qpdf 12.4.2 compilato dal sorgente
+ufficiale con SHA-256 verificato, server web nginx 1.30.6 che serve il frontend compilato e inoltra
+`/api` al backend. Il browser usa una sola origine, `http://localhost:<porta>`. Solo il servizio web
+è pubblicato, sul loopback; database e backend restano su reti interne di Compose. Backend e web
+girano con utenti non privilegiati, file system in sola lettura e senza capability.
+
+### Prerequisiti
+
+- Docker Engine con Compose v2 (verificato con Docker Desktop, Engine 29.8.2 e Compose 5.5.1).
+- Bash e `od` per lo script di configurazione; circa 4 GB liberi per immagini (1,2 GB) e cache di build.
+- Verifica effettuata su `linux/amd64` (Mac Intel). Le immagini di base sono pubblicate anche per
+  `linux/arm64` e qpdf viene compilato dal sorgente, ma l'esecuzione su arm64 non è stata provata.
+
+### Configurazione
+
+Dalla radice del progetto:
+
+```sh
+scripts/demo/configura.sh            # porta predefinita 8088
+scripts/demo/configura.sh --porta 8090   # in alternativa, altra porta
+```
+
+Lo script crea `.env` (porta, fuso orario, codice dell'installazione) e la cartella privata
+`.medbook-demo/` con le password MySQL e le credenziali degli account dimostrativi, generate a
+caso. Non sovrascrive file esistenti; entrambi sono esclusi da Git e dal contesto di build.
+Il database usa tre account distinti: `root` solo locale al container per l'inizializzazione,
+`medbook_app` con i soli privilegi DML per l'applicazione, `medbook_dati` per il caricamento
+dei dati dimostrativi.
+
+### Build, primo avvio e dati dimostrativi
+
+```sh
+docker compose up -d --build --wait
+docker compose run --rm dati
+```
+
+Il primo comando costruisce le immagini (la compilazione di qpdf richiede alcuni minuti) e
+attende che i servizi risultino pronti. Con il volume vuoto, MySQL crea schema, utenti e un
+marcatore dell'installazione. Il secondo comando carica i dati fittizi usando i servizi
+dell'applicazione: account, stanze, prestazioni, abilitazioni, disponibilità, appuntamenti in
+tutti gli stati, pagamenti simulati (anche un tentativo non riuscito), rimborsi e un referto PDF
+sintetico. Le date sono calcolate rispetto al momento del caricamento, nel fuso `MEDBOOK_TZ`
+(predefinito `Europe/Rome`, lo stesso usato dal backend): una settimana di storico e circa due
+settimane di disponibilità future. I dati non vengono aggiornati ai riavvii successivi; per
+riportarli al giorno corrente usare il reset.
+
+Il caricamento agisce solo sul database marcato da questa configurazione e non si ripete: una
+seconda esecuzione risponde «Dati dimostrativi già caricati: nessuna modifica». Se viene
+interrotto, la demo resta nello stato `DATI_FALLITI` e il caricamento successivo chiede il reset.
+Stato corrente: `docker compose run --rm dati stato-dati`.
+
+Aprire **http://localhost:8088** (o la porta scelta). Usare `localhost`, non `127.0.0.1`: l'origine
+ammessa dal backend è esattamente `http://localhost:<porta>`.
+
+### Account e percorso dimostrativo
+
+Le password sono in `.medbook-demo/credenziali-demo.txt` (righe `ruolo email password`):
+
+```sh
+cat .medbook-demo/credenziali-demo.txt
+```
+
+| Ruolo nel file | Account | Cosa provare |
+|---|---|---|
+| `paziente` | Giulia Neri | Prenotazioni in tutti gli stati; pagamento di un appuntamento confermato; referto da scaricare; rimborso approvato e uno in attesa; nuova richiesta e annullamento. |
+| `paziente2` | Paolo Rinaldi | Pagamento non riuscito da ritentare; rimborso respinto; paziente assente. |
+| `cardiologia` | Marta Galli | Agenda; appuntamento trascorso da registrare e referto da caricare; segnalazione di indisponibilità; disponibilità. |
+| `dermatologia` | Luca Moretti | Visite effettuate senza referto, su cui provare il caricamento. |
+| `medicina-generale` | Elena Conti | Medico sostituto per la cardiologia. |
+| `medico-paziente` | Sara Fontana | Account con entrambi i profili: agenda e prenotazioni personali. |
+| `desk` | Davide Sartori | Richieste da confermare o rifiutare, segnalazione da risolvere con sostituzione, rimborso da decidere, esiti da registrare, slot da configurare, incassi in sede, pazienti. |
+| `amministratore` | Alessandra Ferri | Utenti e ruoli, medici e abilitazioni, stanze, prestazioni e prezzi. |
+
+Email, codici fiscali e nomi sono inventati; i codici fiscali usano il codice comune non
+assegnato `Z999` e superano soltanto la validazione formale dell'applicazione.
+
+### Arresto, riavvio e persistenza
+
+```sh
+docker compose stop        # arresto, container conservati
+docker compose start       # riavvio
+docker compose down        # rimozione dei container: i volumi restano
+docker compose up -d --wait
+```
+
+Database e referti stanno nei volumi `medbook-demo_mysql-dati` e `medbook-demo_referti` e
+sopravvivono ad arresti, riavvii e ricreazione dei container. Le sessioni sono in memoria: dopo un
+riavvio del backend occorre accedere di nuovo. Log: `docker compose logs backend` (o `mysql`, `web`).
+
+### Reset esplicito
+
+```sh
+scripts/demo/reset.sh --progetto medbook-demo
+docker compose up -d --wait
+docker compose run --rm dati
+```
+
+Il reset verifica che il progetto Compose configurato coincida con quello indicato e che i suoi
+volumi siano quelli attesi, mostra cosa verrà eliminato e chiede di digitare il nome del progetto.
+Rimuove solo container, reti e volumi di questo progetto (database e referti insieme); non tocca
+immagini, `.env` e `.medbook-demo/`, né risorse di altri progetti. Non esiste una procedura di
+backup e ripristino: per conservare una demo, database e volume dei referti vanno salvati insieme.
+
+### Problemi comuni
+
+- **Porta occupata**: scegliere un'altra porta modificando `MEDBOOK_WEB_PORT` in `.env`, poi
+  `docker compose up -d --wait`.
+- **Accesso rifiutato dal browser**: aprire l'indirizzo con `localhost` e la porta configurata.
+- **Configurazione assente**: Compose segnala `MEDBOOK_DEMO_INSTALLAZIONE` mancante o un segreto
+  inesistente; eseguire `scripts/demo/configura.sh`.
+- **Inizializzazione di MySQL non riuscita** (`docker compose logs mysql`): il volume resta
+  parzialmente inizializzato e non viene ripreso automaticamente; correggere la causa ed eseguire
+  il reset.
+- **Memoria insufficiente durante la build di qpdf**: la compilazione usa 2 processi paralleli,
+  riducibili con `docker compose build --build-arg QPDF_JOBS=1`.
+
+## Prerequisiti senza Docker
 
 - JDK 21 e Maven; la verifica locale usa Maven 3.10.0. Non è incluso un wrapper.
 - Node `^22.12.0 || ^24.0.0 || >=26.0.0`, npm e `package-lock.json`.

@@ -9,6 +9,7 @@
 .env
 .env.*
 !.env.example
+.medbook-demo/
 .idea/
 .vscode/
 *.iml

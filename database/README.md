@@ -31,6 +31,10 @@ Predisporre separatamente l'utente applicativo, con password privata e privilegi
 privilegi DDL o accesso a `performance_schema`. Non collegarsi come root per il normale uso.
 Creare il primo amministratore con il comando interattivo del [README principale](../README.md).
 
+La demo Docker esegue questi passi da sola al primo avvio con volume vuoto
+(`docker/mysql/10-medbook.sh`): schema corrente, utente applicativo con soli privilegi DML e un
+catalogo `medbook_demo` che marca l'installazione dimostrativa. Vedi il README principale.
+
 ## Database precedenti
 
 - `001_prenotazione_indisponibilita.sql`: flag di indisponibilità della prenotazione.

@@ -1,0 +1,122 @@
+# Demo locale di MedBook: MySQL, backend Java e server web con una sola origine.
+# Solo il servizio web è pubblicato, sul loopback; database e backend restano sulle reti interne.
+# Configurazione e segreti: scripts/demo/configura.sh genera .env e .medbook-demo/ (esclusi da Git).
+name: medbook-demo
+
+x-sicurezza: &sicurezza
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
+x-database: &database
+  MEDBOOK_DB_URL: jdbc:mysql://mysql:3306/medbook
+  MEDBOOK_REFERTI_DIRECTORY: /var/lib/medbook/referti
+  MEDBOOK_QPDF_EXECUTABLE: /usr/local/bin/qpdf
+  TZ: ${MEDBOOK_TZ:-Europe/Rome}
+
+services:
+  mysql:
+    build:
+      context: .
+      target: mysql
+    image: medbook-demo/mysql:1.0.0
+    user: "999:999"
+    environment:
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql_root
+      MYSQL_ROOT_HOST: localhost
+      MEDBOOK_DEMO_INSTALLAZIONE: ${MEDBOOK_DEMO_INSTALLAZIONE:?configurazione assente, eseguire scripts/demo/configura.sh}
+      TZ: ${MEDBOOK_TZ:-Europe/Rome}
+    secrets: [mysql_root, mysql_app, mysql_dati]
+    volumes:
+      - mysql-dati:/var/lib/mysql
+    networks: [dati]
+    <<: *sicurezza
+    # Il server temporaneo dell'inizializzazione non ascolta in TCP: la prova su TCP attende quello definitivo.
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "--protocol=tcp", "-h", "127.0.0.1", "--silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 120s
+
+  backend:
+    build:
+      context: .
+      target: backend
+    image: medbook-demo/backend:1.0.0
+    environment:
+      <<: *database
+      MEDBOOK_DB_USERNAME: medbook_app
+      MEDBOOK_DB_PASSWORD_FILE: /run/secrets/mysql_app
+      MEDBOOK_HTTP_HOST: 0.0.0.0
+      MEDBOOK_HTTP_PORT: "8080"
+      MEDBOOK_AUTH_MODE: local-http
+      MEDBOOK_AUTH_ORIGIN: http://localhost:${MEDBOOK_WEB_PORT:-8088}
+      MEDBOOK_SIMULATED_PAYMENT_OUTCOME: ${MEDBOOK_SIMULATED_PAYMENT_OUTCOME:-PAGATO}
+    secrets: [mysql_app]
+    volumes:
+      - referti:/var/lib/medbook/referti
+    networks: [dati, web]
+    read_only: true
+    tmpfs: [/tmp]
+    <<: *sicurezza
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      target: web
+    image: medbook-demo/web:1.0.0
+    ports:
+      - "127.0.0.1:${MEDBOOK_WEB_PORT:-8088}:8080"
+    networks: [web]
+    read_only: true
+    tmpfs: [/tmp]
+    <<: *sicurezza
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  # Caricamento esplicito dei dati fittizi: docker compose run --rm dati
+  dati:
+    image: medbook-demo/backend:1.0.0
+    profiles: [dati]
+    command: ["dati"]
+    environment:
+      <<: *database
+      MEDBOOK_DB_USERNAME: medbook_dati
+      MEDBOOK_DB_PASSWORD_FILE: /run/secrets/mysql_dati
+      MEDBOOK_DEMO_INSTALLAZIONE: ${MEDBOOK_DEMO_INSTALLAZIONE:?configurazione assente, eseguire scripts/demo/configura.sh}
+      MEDBOOK_DEMO_CREDENZIALI: /run/secrets/credenziali_demo
+    secrets: [mysql_dati, credenziali_demo]
+    volumes:
+      - referti:/var/lib/medbook/referti
+    networks: [dati]
+    read_only: true
+    tmpfs: [/tmp]
+    <<: *sicurezza
+    healthcheck:
+      disable: true
+    depends_on:
+      backend:
+        condition: service_healthy
+
+networks:
+  dati:
+    internal: true
+  web: {}
+
+volumes:
+  mysql-dati: {}
+  referti: {}
+
+secrets:
+  mysql_root:
+    file: ./.medbook-demo/mysql-root
+  mysql_app:
+    file: ./.medbook-demo/mysql-app
+  mysql_dati:
+    file: ./.medbook-demo/mysql-dati
+  credenziali_demo:
+    file: ./.medbook-demo/credenziali-demo.txt

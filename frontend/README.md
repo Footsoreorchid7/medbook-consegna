@@ -20,8 +20,9 @@ con cookie, proxy, database o qpdf. Non usare il database applicativo come fixtu
 
 La build produce `dist/`, esclusa da Git. `npm run preview` visualizza la build, ma non
 ha il proxy di sviluppo: da solo non avvia l'applicazione completa. Un server per la build
-deve servire le rotte Vue con fallback a `index.html` e inoltrare `/api` al backend.
-Non sono inclusi una configurazione di pubblicazione o servizi Docker.
+deve servire le rotte Vue con fallback a `index.html` e inoltrare `/api` al backend: nella
+demo Docker lo fa nginx (`docker/web/default.conf`), vedi il README principale. Non è inclusa
+una configurazione per la pubblicazione online.
 
 Catalogo e disponibilità sono pubblici. Le pagine riservate dipendono dalle capacità
 restituite dalla sessione; il server verifica sempre i permessi. Cookie HttpOnly e token
